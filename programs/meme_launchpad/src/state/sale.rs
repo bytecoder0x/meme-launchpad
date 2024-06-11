@@ -1,0 +1,267 @@
+use anchor_lang::prelude::*;
+use anchor_spl::{
+    associated_token,
+    token::{Mint, Token, TokenAccount},
+};
+
+#[derive(Copy, Clone, PartialEq, AnchorSerialize, AnchorDeserialize, Default, Debug)]
+pub struct BidderStats {
+    pub fills_volume: u64,
+    pub weighted_fills_sum: u128,
+    pub min_fill_price: u64,
+    pub max_fill_price: u64,
+    pub num_trades: u64,
+}
+
+#[derive(Copy, Clone, PartialEq, AnchorSerialize, AnchorDeserialize, Default, Debug)]
+pub struct SaleStats {
+    pub first_trade_time: i64,
+    pub last_trade_time: i64,
+    pub last_amount: u64,
+    pub last_price: u64,
+    pub wl_bidders: BidderStats,
+    pub reg_bidders: BidderStats,
+}
+
+#[derive(Clone, PartialEq, AnchorSerialize, AnchorDeserialize, Default, Debug)]
+pub struct CommonParams {
+    pub name: String,
+    pub description: String,
+    pub about_seller: String,
+    pub seller_link: String,
+    pub start_time: i64,
+    pub end_time: i64,
+    pub sale_delay: i64,
+}
+
+#[derive(Copy, Clone, PartialEq, AnchorSerialize, AnchorDeserialize, Debug)]
+pub enum PricingModel {
+    Fixed,
+}
+
+impl Default for PricingModel {
+    fn default() -> Self {
+        Self::Fixed
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, AnchorSerialize, AnchorDeserialize, Debug)]
+pub enum RepriceFunction {
+    Linear,
+    Exponential,
+}
+
+impl Default for RepriceFunction {
+    fn default() -> Self {
+        Self::Linear
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, AnchorSerialize, AnchorDeserialize, Debug)]
+pub enum AmountFunction {
+    Fixed,
+}
+
+impl Default for AmountFunction {
+    fn default() -> Self {
+        Self::Fixed
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, AnchorSerialize, AnchorDeserialize, Default, Debug)]
+pub struct PricingParams {
+    pub pricing_model: PricingModel,
+    pub amount_function: AmountFunction,
+    pub start_price: u64,
+}
+
+#[derive(Copy, Clone, PartialEq, AnchorSerialize, AnchorDeserialize, Default, Debug)]
+pub struct VestingParams {
+    pub vecting_model: PricingModel,
+}
+
+#[account]
+#[derive(Default, Debug)]
+pub struct Sale {
+    pub owner: Pubkey,
+
+    pub common: CommonParams,
+
+    pub pricing: PricingParams,
+    pub stats: SaleStats,
+    pub vesting: VestingParams,
+
+    pub token: Pubkey,
+    pub payment_token: Pubkey,
+
+    pub sale_amount: u64,
+    pub already_sold: u64,
+    pub liq_amount: u64,
+
+    pub creation_time: i64,
+    pub bump: u8,
+}
+
+impl CommonParams {
+    // todo: check
+    pub fn validate(&self, curtime: i64) -> bool {
+        (self.end_time > 0 && self.start_time > 0)
+                || (self.end_time > self.start_time && self.end_time > curtime)
+    }
+}
+
+impl PricingParams {
+    pub fn validate(&self) -> bool {
+        self.pricing_model == PricingModel::Fixed && self.start_price > 0
+    }
+}
+
+impl Sale {
+    pub const LEN: usize = 8 + std::mem::size_of::<Sale>();
+    pub const MAX_TOKENS: usize = 10;
+
+    pub fn validate(&self) -> Result<bool> {
+        Ok(self.common.name.len() >= 6
+            && self.common.validate(self.get_time()?)
+            && self.pricing.validate())
+    }
+
+    /// checks if sale has started
+    pub fn is_started(&self, curtime: i64) -> bool {
+        self.common.start_time > 0 && curtime >= self.common.start_time
+    }
+
+    /// Checks if the sale is ended
+    pub fn is_ended(&self, curtime: i64) -> bool {
+        curtime >= self.common.end_time
+    }
+
+    #[cfg(feature = "test")]
+    pub fn get_time(&self) -> Result<i64> {
+        Ok(self.creation_time)
+    }
+
+    #[cfg(not(feature = "test"))]
+    pub fn get_time(&self) -> Result<i64> {
+        let time = solana_program::sysvar::clock::Clock::get()?.unix_timestamp;
+        if time > 0 {
+            Ok(time)
+        } else {
+            Err(ProgramError::InvalidAccountData.into())
+        }
+    }
+
+    pub fn get_start_time(&self) -> i64 {
+        self.common.start_time
+    }
+
+    pub fn get_end_time(&self) -> i64 {
+        self.common.end_time
+    }
+
+    pub fn get_sale_amount(&self) -> Result<u64> {
+        match self.pricing.pricing_model {
+            PricingModel::Fixed => self.get_sale_amount_fixed(),
+        }
+    }
+
+    pub fn get_sale_price(&self, amount: u64, curtime: i64) -> Result<u64> {
+        match self.pricing.pricing_model {
+            PricingModel::Fixed => self.get_sale_price_fixed(),
+        }
+    }
+
+    fn get_sale_amount_fixed(&self) -> Result<u64> {
+        Ok(u64::MAX)
+    }
+
+    fn get_sale_price_fixed(&self) -> Result<u64> {
+        Ok(self.pricing.start_price)
+    }
+
+}
+
+
+#[derive(AnchorSerialize, AnchorDeserialize)]
+pub struct CreateSaleParams {
+    pub common: CommonParams,
+    pub pricing: PricingParams,
+    pub sale_amount: u64,
+    pub liq_amount: u64,
+}
+
+pub fn _create_sale<'info>(
+    _sale: &mut Account<'info, Sale>,
+    // _sale: &AccountInfo<'info>,
+    owner: AccountInfo<'info>,
+    target_token: AccountInfo<'info>,
+    target_ata: AccountInfo<'info>,
+    payment_ata: AccountInfo<'info>,
+    payment_token: AccountInfo<'info>,
+    sale_bump: u8,
+    associated_token_program: AccountInfo<'info>,
+    system_program: AccountInfo<'info>,
+    token_program: AccountInfo<'info>,
+    params: CreateSaleParams
+) -> Result<()> {
+    msg!("Creating Sale Account");
+    
+    let cpi_ctx = CpiContext::new(
+        associated_token_program.to_account_info(),
+        associated_token::Create {
+            payer: owner.to_account_info(),
+            associated_token: target_ata.to_account_info(),
+            authority: _sale.to_account_info(),
+            mint: target_token.to_account_info(),
+            system_program: system_program.to_account_info(),
+            token_program: token_program.to_account_info(),
+        }
+    );
+    
+    let _ = associated_token::create(cpi_ctx);
+
+    msg!("Creating payment associated token account");
+    let _ = associated_token::create(CpiContext::new(
+        associated_token_program.to_account_info(),
+        associated_token::Create {
+            payer: owner.to_account_info(),
+            associated_token: payment_ata.to_account_info(),
+            authority: _sale.to_account_info(),
+            mint: payment_token.to_account_info(),
+            system_program: system_program.to_account_info(),
+            token_program: token_program.to_account_info(),
+        },
+    ));
+    
+    msg!("Setting Sale Account");
+    msg!("sale amount: {}", params.sale_amount);
+    
+    // let mut sale = _sale.try_borrow_mut_data();
+    // let mut sale = _sale.try_borrow_mut_data()?;
+    
+    // let sale = Account::<Sale>::try_from(_sale)?;
+    
+    // write data to _sale account
+    // let mut sale = Sale::try_from_slice(&_sale.data.borrow())?;
+    // let mut sale = Sale::default();
+
+    let sale = _sale;
+
+    sale.sale_amount = params.sale_amount;
+    sale.already_sold = 0;
+    sale.owner = owner.key();
+    sale.token = target_token.key();
+    sale.payment_token = payment_token.key();
+    sale.stats = SaleStats::default();
+    sale.common = params.common;
+    sale.pricing = params.pricing;
+    sale.creation_time = sale.get_time()?;
+    sale.bump = sale_bump;
+
+
+    // let data_bytes = sale.try_to_vec().map_err(|_| ProgramError::InvalidAccountData)?;
+    // _sale.data.borrow_mut()[..data_bytes.len()].copy_from_slice(&data_bytes);
+    // sale.
+
+    Ok(())
+}
