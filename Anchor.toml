@@ -5,7 +5,7 @@ seeds = false
 skip-lint = false
 
 [programs.localnet]
-meme_launchpad = "6xX32V5PW4Q46qPbpHCYzFyUPXaRvPKnBsse2NimayRs"
+vesting = "6xX32V5PW4Q46qPbpHCYzFyUPXaRvPKnBsse2NimayRs"
 
 [registry]
 url = "https://api.apr.dev"
