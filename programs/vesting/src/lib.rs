@@ -16,13 +16,11 @@ pub mod vesting {
     ) -> Result<()> {
         let vesting_account = &mut ctx.accounts.vesting_account;
 
-        vesting_account.token = ctx.accounts.target_token.mint;
         vesting_account.start_date = start_date;
         vesting_account.duration = duration;
         vesting_account.amount = amount;
         vesting_account.released_amount = 0;
         vesting_account.vesting_type = vesting_type;
-        vesting_account.user = *ctx.accounts.user.key;
 
         // Transfer tokens to the vault account
         let cpi_accounts = Transfer {
@@ -51,13 +49,11 @@ pub enum VestingType {
 
 #[account]
 pub struct VestingAccount {
-    pub token: Pubkey,
     pub start_date: u32,
     pub duration: u32,
     pub amount: u64,
     pub released_amount: u64,
     pub vesting_type: VestingType,
-    pub user: Pubkey,
 }
 
 #[derive(Accounts)]
@@ -65,7 +61,7 @@ pub struct InitializeVestingAccount<'info> {
     #[account(
         init,
         payer = authority,
-        seeds = [user.key.as_ref(), target_token.mint.as_ref()],
+        seeds = [user.key.as_ref(), target_token.key.as_ref()],
         bump,
         space = 8 + 32 + 8 + 8 + 8 + 8 + 1 + 32
     )]
@@ -75,10 +71,14 @@ pub struct InitializeVestingAccount<'info> {
     #[account(mut)]
     pub vault_token_account: Account<'info, TokenAccount>,
     #[account(mut)]
-    pub target_token: Account<'info, TokenAccount>,
+    /// CHECK:
+    pub target_token: AccountInfo<'info>,
     #[account(mut)]
-    pub authority: Signer<'info>,
+    /// CHECK:
     pub user: AccountInfo<'info>,
+    #[account(mut)]
+    /// CHECK:
+    pub authority: Signer<'info>,
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
     pub rent: Sysvar<'info, Rent>,
