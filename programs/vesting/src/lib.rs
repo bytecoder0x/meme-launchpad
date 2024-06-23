@@ -24,8 +24,8 @@ pub mod vesting {
 
         // Transfer tokens to the vault account
         let cpi_accounts = Transfer {
-            from: ctx.accounts.sale_token_account.to_account_info(),
-            to: ctx.accounts.vault_token_account.to_account_info(),
+            from: ctx.accounts.sale_account.to_account_info(),
+            to: ctx.accounts.vault_account.to_account_info(),
             authority: ctx.accounts.authority.to_account_info(),
         };
 
@@ -63,21 +63,23 @@ pub struct InitializeVestingAccount<'info> {
         payer = authority,
         seeds = [user.key.as_ref(), target_token.key.as_ref()],
         bump,
-        space = 8 + 32 + 8 + 8 + 8 + 8 + 1 + 32
+        space = 8 + 8 + 8 + 8 + 1
     )]
     pub vesting_account: Account<'info, VestingAccount>,
+    #[account(
+        mut,
+        constraint = sale_account.mint.key() == target_token.key()
+    )]
+    pub sale_account: Account<'info, TokenAccount>,
     #[account(mut)]
-    pub sale_token_account: Account<'info, TokenAccount>,
-    #[account(mut)]
-    pub vault_token_account: Account<'info, TokenAccount>,
-    #[account(mut)]
-    /// CHECK:
-    pub target_token: AccountInfo<'info>,
+    pub vault_account: Account<'info, TokenAccount>,
     #[account(mut)]
     /// CHECK:
     pub user: AccountInfo<'info>,
     #[account(mut)]
     /// CHECK:
+    pub target_token: AccountInfo<'info>,
+    #[account(mut)]
     pub authority: Signer<'info>,
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
