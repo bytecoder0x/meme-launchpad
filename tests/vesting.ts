@@ -11,7 +11,7 @@ import {
 } from "@solana/spl-token";
 
 
-describe("vesting", () => {
+describe.only("vesting", () => {
     const provider = anchor.AnchorProvider.env();
     anchor.setProvider(provider);
 
@@ -68,22 +68,24 @@ describe("vesting", () => {
         const userATA = await createATA(user.publicKey);
         const vaultATA = await createATA(vaultAccount.publicKey);
         const saleATA = await createATA(saleAccount.publicKey);
-        const vestingAccount = anchor.web3.PublicKey.findProgramAddressSync(
+        const vesting = anchor.web3.PublicKey.findProgramAddressSync(
             [user.publicKey.toBuffer(), paymentToken.publicKey.toBuffer()],
             program.programId
         )[0];
 
         await mint(saleATA);
 
-        const startDate = Math.floor(Date.now() / 1000);
-        const duration = 0; // 30 days in seconds
-        const amount = new anchor.BN(1000);
-        const vestingType = { simple: {} };
+        const params = {
+            startDate: Math.floor(Date.now() / 1000),
+            duration: 0, // 30 days in seconds
+            amount: new anchor.BN(1000),
+            vestingType: { simple: {} },
+        }
 
         await program.methods
-            .initializeVesting(startDate, duration, amount, vestingType)
+            .createVesting(params)
             .accounts({
-                vestingAccount: vestingAccount,
+                vestingAccount: vesting,
                 saleAccount: saleATA,
                 vaultAccount: vaultATA,
                 targetToken: paymentToken.publicKey,
@@ -100,8 +102,8 @@ describe("vesting", () => {
         //     .view();
         // console.log(startDate);
 
-        // const account = await program.account.vestingAccount.fetch(vestingAccount);
-        // console.log("Vesting Account: ", account);
+        const account = await program.account.vestingAccount.fetch(vesting);
+        console.log("Vesting Account: ", account);
     });
 });
 

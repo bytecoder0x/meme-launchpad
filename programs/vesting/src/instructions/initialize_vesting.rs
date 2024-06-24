@@ -19,7 +19,7 @@ pub struct InitializeVestingAccount<'info> {
     )]
     pub sale_account: Account<'info, TokenAccount>,
     #[account(mut)]
-    pub vault_account: Account<'info, TokenAccount>,
+    pub vault_account: Account<'info, TokenAccount>, 
     #[account(mut)]
     /// CHECK:
     pub user: AccountInfo<'info>,
@@ -66,3 +66,5 @@ pub fn initialize_vesting(
 
     Ok(())
 }
+
+// pda program

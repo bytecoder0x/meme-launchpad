@@ -15,34 +15,28 @@ pub struct VestingAccount {
     pub vesting_type: VestingType,
 }
 
-#[derive(Accounts)]
-pub struct CalculateReleasableAmount<'info> {
-    pub vesting_account: Account<'info, VestingAccount>,
-}
-
-pub fn _calculate_releasable_amount(ctx: Context<CalculateReleasableAmount>) -> Result<u64> {
-    let vesting_account = &ctx.accounts.vesting_account;
-    let current_time = Clock::get()?.unix_timestamp as u32;
-
-    let releasable_amount = match vesting_account.vesting_type {
-        VestingType::Simple => {
-            if current_time >= vesting_account.start_date + vesting_account.duration {
-                vesting_account.amount
-            } else {
-                0
+impl VestingAccount {
+    pub fn calculate_releasable_amount(&self, current_time: u32) -> Result<u64> {
+        let releasable_amount = match self.vesting_type {
+            VestingType::Simple => {
+                if current_time >= self.start_date + self.duration {
+                    self.amount
+                } else {
+                    0
+                }
             }
-        }
-        VestingType::Linear => {
-            if current_time <= vesting_account.start_date {
-                0
-            } else if current_time >= vesting_account.start_date + vesting_account.duration {
-                vesting_account.amount
-            } else {
-                let elapsed_time = (current_time - vesting_account.start_date) as u64;
-                vesting_account.amount * elapsed_time / vesting_account.duration as u64
+            VestingType::Linear => {
+                if current_time <= self.start_date {
+                    0
+                } else if current_time >= self.start_date + self.duration {
+                    self.amount
+                } else {
+                    let elapsed_time = (current_time - self.start_date) as u64;
+                    self.amount * elapsed_time / self.duration as u64
+                }
             }
-        }
-    };
+        };
 
-    Ok(releasable_amount - vesting_account.released_amount)
+        Ok(releasable_amount - self.released_amount)
+    }
 }
