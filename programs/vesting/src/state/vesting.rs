@@ -29,7 +29,7 @@ pub fn _calculate_releasable_amount(ctx: Context<CalculateReleasableAmount>) -> 
             if current_time >= vesting_account.start_date + vesting_account.duration {
                 vesting_account.amount
             } else {
-                vesting_account.amount
+                0
             }
         }
         VestingType::Linear => {

@@ -1,54 +1,120 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
 import { Vesting } from "../target/types/vesting";
-const { SystemProgram, Keypair } = anchor.web3;
+import {
+    createMint,
+    createAssociatedTokenAccount,
+    TOKEN_PROGRAM_ID,
+    ASSOCIATED_TOKEN_PROGRAM_ID,
+    getAssociatedTokenAddress,
+    mintTo,
+} from "@solana/spl-token";
 
-describe('vesting', () => {
-  // Configure the client to use the local cluster.
-  const provider = anchor.AnchorProvider.local();
-  anchor.setProvider(provider);
 
-   const program = anchor.workspace.Vesting as Program<Vesting>
+describe("vesting", () => {
+    const provider = anchor.AnchorProvider.env();
+    anchor.setProvider(provider);
 
-  it('Initialize vesting account', async () => {
-    const vestingAccount = Keypair.generate();
-    const vaultTokenAccount = Keypair.generate();
-    const saleTokenAccount = Keypair.generate();
-    const targetToken = Keypair.generate();
+    const program = anchor.workspace.Vesting as Program<Vesting>;
 
-    const startDate = Math.floor(Date.now() / 1000); // Current time as Unix timestamp
-    const duration = 60 * 60 * 24 * 30; // 30 days in seconds
-    const amount = new anchor.BN(1000); // Amount of tokens
-    const vestingType = { simple: {} };
+    const paymentToken = new anchor.web3.Keypair();
+    const vaultAccount = new anchor.web3.Keypair();
+    const user = new anchor.web3.Keypair();
 
-    await program.rpc.initializeVesting(
-      startDate,
-      duration,
-      amount,
-      vestingType,
-      {
-        accounts: {
-          vestingAccount: vestingAccount.publicKey,
-          saleTokenAccount: saleTokenAccount.publicKey,
-          vaultTokenAccount: vaultTokenAccount.publicKey,
-          targetToken: targetToken.publicKey,
-          authority: provider.wallet.publicKey,
-          user: provider.wallet.publicKey,
-          systemProgram: SystemProgram.programId,
-          tokenProgram: anchor.utils.token.TOKEN_PROGRAM_ID,
-          rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-        },
-        signers: [vestingAccount],
-        instructions: [
-          await program.account.vestingAccount.createInstruction(vestingAccount),
-          await program.account.vestingAccount.createInstruction(vaultTokenAccount),
-          await program.account.vestingAccount.createInstruction(saleTokenAccount),
-          await program.account.vestingAccount.createInstruction(targetToken),
-        ],
-      }
-    );
+    const saleAccount = provider.wallet as anchor.Wallet;
 
-    const account = await program.account.vestingAccount.fetch(vestingAccount.publicKey);
-    console.log("Vesting Account: ", account);
-  });
+    async function createATA(key: anchor.web3.PublicKey) {
+        const ATA = await createAssociatedTokenAccount(
+            provider.connection,
+            saleAccount.payer,
+            paymentToken.publicKey,
+            key,
+            {},
+            TOKEN_PROGRAM_ID,
+            ASSOCIATED_TOKEN_PROGRAM_ID
+        );
+
+        return ATA;
+    }
+
+    async function mint(to: anchor.web3.PublicKey) {
+        await mintTo(
+            provider.connection,
+            saleAccount.payer,
+            paymentToken.publicKey,
+            to,
+            saleAccount.payer,
+            1000 * 10 ** 9,
+            [],
+            {},
+            TOKEN_PROGRAM_ID
+        );
+    }
+
+    before(async () => {
+        await createMint(
+            provider.connection,
+            saleAccount.payer,
+            saleAccount.publicKey,
+            saleAccount.publicKey,
+            9,
+            paymentToken,
+            {},
+            TOKEN_PROGRAM_ID
+        );
+    });
+
+    it("Initialize vesting account", async () => {
+        const userATA = await createATA(user.publicKey);
+        const vaultATA = await createATA(vaultAccount.publicKey);
+        const saleATA = await createATA(saleAccount.publicKey);
+        const vestingAccount = anchor.web3.PublicKey.findProgramAddressSync(
+            [user.publicKey.toBuffer(), paymentToken.publicKey.toBuffer()],
+            program.programId
+        )[0];
+
+        await mint(saleATA);
+
+        const startDate = Math.floor(Date.now() / 1000);
+        const duration = 0; // 30 days in seconds
+        const amount = new anchor.BN(1000);
+        const vestingType = { simple: {} };
+
+        await program.methods
+            .initializeVesting(startDate, duration, amount, vestingType)
+            .accounts({
+                vestingAccount: vestingAccount,
+                saleAccount: saleATA,
+                vaultAccount: vaultATA,
+                targetToken: paymentToken.publicKey,
+                user: user.publicKey,
+                systemProgram: anchor.web3.SystemProgram.programId,
+                tokenProgram: TOKEN_PROGRAM_ID,
+                rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+            })
+            .rpc();
+        
+        // const releasableAmount = await program.methods
+        //     .calculateReleasableAmount()
+        //     .accounts({ vestingAccount })
+        //     .view();
+        // console.log(startDate);
+
+        // const account = await program.account.vestingAccount.fetch(vestingAccount);
+        // console.log("Vesting Account: ", account);
+    });
 });
+
+
+// const transaction = new Transaction().add(
+//     createAssociatedTokenAccountInstruction(
+//         wallet.publicKey,
+//         saleATA,
+//         saleAccount.publicKey,
+//         paymentToken.publicKey,
+//         TOKEN_PROGRAM_ID,
+//         ASSOCIATED_TOKEN_PROGRAM_ID
+//     )
+// );
+
+// await provider.sendAndConfirm(transaction, [wallet.payer]);
