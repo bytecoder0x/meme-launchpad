@@ -12,7 +12,7 @@ pub struct ClaimTokens<'info> {
         seeds = [user.key.as_ref(), target_token.key().as_ref()],
         bump
     )]
-    pub vesting_account: Account<'info, VestingAccount>,
+    pub vesting: Account<'info, VestingAccount>,
     #[account(mut)]
     pub user: Signer<'info>,
     #[account(
@@ -21,42 +21,38 @@ pub struct ClaimTokens<'info> {
         constraint = user_token_account.mint == target_token.key(),
     )]
     pub user_token_account: Account<'info, TokenAccount>,
-    #[account(
-        mut,
-        seeds = [b"vault".as_ref(), target_token.key().as_ref()],
-        bump
-    )]
-    pub vault_account: AccountInfo<'info>,
-    pub vault_token_account: Account<'info, TokenAccount>,
+    #[account(mut)]
+    pub vesting_token_account: Account<'info, TokenAccount>,
     pub target_token: Account<'info, Mint>,
     pub token_program: Program<'info, Token>,
 }
 
 pub fn allocate_tokens(ctx: Context<ClaimTokens>) -> Result<()> {
-    let vesting_account = &mut ctx.accounts.vesting_account;
+    let vesting = &mut ctx.accounts.vesting;
     let current_time = Clock::get()?.unix_timestamp as u32;
 
-    let claimable_amount = vesting_account.calculate_releasable_amount(current_time)?;
+    let claimable_amount = vesting.calculate_releasable_amount(current_time)?;
 
     require!(claimable_amount > 0, VestingError::NoTokensAvailable);
 
-    vesting_account.released_amount = vesting_account
+    vesting.released_amount = vesting
         .released_amount
         .checked_add(claimable_amount)
         .ok_or(VestingError::Overflow)?;
 
     let target_token = ctx.accounts.target_token.key();
+    let user = ctx.accounts.user.key();
 
     let signer_seeds: &[&[&[u8]]] = &[&[
-        "vault".as_bytes(),
+        user.as_ref(),
         target_token.as_ref(),
-        &[ctx.bumps.vault_account]
+        &[ctx.bumps.vesting]
     ]];
 
     let cpi_accounts = Transfer {
-        from: ctx.accounts.vault_token_account.to_account_info(),
+        from: ctx.accounts.vesting_token_account.to_account_info(),
         to: ctx.accounts.user_token_account.to_account_info(),
-        authority: ctx.accounts.vault_account.to_account_info(),
+        authority: ctx.accounts.vesting.to_account_info(),
     };
 
     let cpi_program = ctx.accounts.token_program.to_account_info();

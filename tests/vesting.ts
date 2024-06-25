@@ -1,5 +1,4 @@
 import * as anchor from "@coral-xyz/anchor";
-import { Program } from "@coral-xyz/anchor";
 import { Vesting } from "../target/types/vesting";
 import {
     createMint,
@@ -7,27 +6,24 @@ import {
     TOKEN_PROGRAM_ID,
     ASSOCIATED_TOKEN_PROGRAM_ID,
     getAssociatedTokenAddress,
-    mintTo,
-    getAssociatedTokenAddressSync,
+    mintTo
 } from "@solana/spl-token";
 
 
 describe.only("vesting", () => {
     const provider = anchor.AnchorProvider.env();
     anchor.setProvider(provider);
+    const program = anchor.workspace.Vesting as anchor.Program<Vesting>;
 
-    const program = anchor.workspace.Vesting as Program<Vesting>;
-
-    const paymentToken = new anchor.web3.Keypair();
-    const vaultAccount = new anchor.web3.Keypair();
     const user = new anchor.web3.Keypair();
+    const paymentToken = new anchor.web3.Keypair();
 
-    const saleAccount = provider.wallet as anchor.Wallet;
+    const sale = provider.wallet as anchor.Wallet;
 
     async function createATA(key: anchor.web3.PublicKey) {
         const ATA = await createAssociatedTokenAccount(
             provider.connection,
-            saleAccount.payer,
+            sale.payer,
             paymentToken.publicKey,
             key,
             {},
@@ -38,13 +34,24 @@ describe.only("vesting", () => {
         return ATA;
     }
 
+    async function getATA(key: anchor.web3.PublicKey, PDA: boolean) {
+        const ATA = await getAssociatedTokenAddress(
+            paymentToken.publicKey,
+            key,
+            PDA,
+            TOKEN_PROGRAM_ID,
+        )
+
+        return ATA;
+    }
+
     async function mint(to: anchor.web3.PublicKey) {
         await mintTo(
             provider.connection,
-            saleAccount.payer,
+            sale.payer,
             paymentToken.publicKey,
             to,
-            saleAccount.payer,
+            sale.payer,
             1000 * 10 ** 9,
             [],
             {},
@@ -55,9 +62,9 @@ describe.only("vesting", () => {
     before(async () => {
         await createMint(
             provider.connection,
-            saleAccount.payer,
-            saleAccount.publicKey,
-            saleAccount.publicKey,
+            sale.payer,
+            sale.publicKey,
+            sale.publicKey,
             9,
             paymentToken,
             {},
@@ -66,55 +73,61 @@ describe.only("vesting", () => {
     });
 
     it("Initialize vesting account", async () => {
-        // const userATA = await createATA(user.publicKey);
-        // const vaultATA = await createATA(vaultAccount.publicKey);
-        const saleATA = await createATA(saleAccount.publicKey);
         const vesting = anchor.web3.PublicKey.findProgramAddressSync(
             [user.publicKey.toBuffer(), paymentToken.publicKey.toBuffer()],
             program.programId
         )[0];
 
+        const userATA = await createATA(user.publicKey);
+        const saleATA = await createATA(sale.publicKey);
+        const vestingATA = await getATA(vesting, true);
         await mint(saleATA);
 
-        const params = {
+        const vestingParams = {
             startDate: Math.floor(Date.now() / 1000),
-            duration: 0, // 30 days in seconds
+            duration: 1,
             amount: new anchor.BN(1000),
             vestingType: { simple: {} },
         }
 
-        const vaultATA = await getAssociatedTokenAddress(
-            paymentToken.publicKey,
-            vaultAccount.publicKey,
-            false,
-            TOKEN_PROGRAM_ID,
-        )
-
         await program.methods
-            .createVesting(params)
+            .createVesting(vestingParams)
             .accounts({
-                vestingAccount: vesting,
-                saleAccount: saleATA,
-                vaultTokenAccount: vaultATA,
-                vaultAccount: vaultAccount.publicKey,
+                vesting: vesting,
+                saleTokenAccount: saleATA,
+                vestingTokenAccount: vestingATA,
                 targetToken: paymentToken.publicKey,
                 user: user.publicKey,
+                signer: sale.publicKey,
                 systemProgram: anchor.web3.SystemProgram.programId,
                 tokenProgram: TOKEN_PROGRAM_ID,
                 rent: anchor.web3.SYSVAR_RENT_PUBKEY,
                 associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID
             })
-            .signers([saleAccount.payer])
+            .signers([sale.payer])
             .rpc().catch(err => console.log(err));
         
-        // const releasableAmount = await program.methods
-        //     .calculateReleasableAmount()
-        //     .accounts({ vestingAccount })
-        //     .view();
-        // console.log(startDate);
+            function delay(ms) {
+                return new Promise(resolve => setTimeout(resolve, ms));
+            }
 
-        // const account = await program.account.vestingAccount.fetch(vesting);
-        // console.log("Vesting Account: ", account);
+            await delay(1000 * 10);
+
+            await program.methods
+                .claimTokens()
+                .accounts({
+                    vesting: vesting,
+                    userTokenAccount: userATA,
+                    vestingTokenAccount: vestingATA,
+                    targetToken: paymentToken.publicKey,
+                    tokenProgram: TOKEN_PROGRAM_ID,
+                    user: user.publicKey,
+                })
+                .signers([user])
+                .rpc().catch(err => console.log(err));
+
+        const account = await program.account.vestingAccount.fetch(vesting);
+        console.log("Vesting Account: ", account);
     });
 });
 
