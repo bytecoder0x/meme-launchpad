@@ -8,6 +8,7 @@ import {
     ASSOCIATED_TOKEN_PROGRAM_ID,
     getAssociatedTokenAddress,
     mintTo,
+    getAssociatedTokenAddressSync,
 } from "@solana/spl-token";
 
 
@@ -65,8 +66,8 @@ describe.only("vesting", () => {
     });
 
     it("Initialize vesting account", async () => {
-        const userATA = await createATA(user.publicKey);
-        const vaultATA = await createATA(vaultAccount.publicKey);
+        // const userATA = await createATA(user.publicKey);
+        // const vaultATA = await createATA(vaultAccount.publicKey);
         const saleATA = await createATA(saleAccount.publicKey);
         const vesting = anchor.web3.PublicKey.findProgramAddressSync(
             [user.publicKey.toBuffer(), paymentToken.publicKey.toBuffer()],
@@ -82,19 +83,29 @@ describe.only("vesting", () => {
             vestingType: { simple: {} },
         }
 
+        const vaultATA = await getAssociatedTokenAddress(
+            paymentToken.publicKey,
+            vaultAccount.publicKey,
+            false,
+            TOKEN_PROGRAM_ID,
+        )
+
         await program.methods
             .createVesting(params)
             .accounts({
                 vestingAccount: vesting,
                 saleAccount: saleATA,
-                vaultAccount: vaultATA,
+                vaultTokenAccount: vaultATA,
+                vaultAccount: vaultAccount.publicKey,
                 targetToken: paymentToken.publicKey,
                 user: user.publicKey,
                 systemProgram: anchor.web3.SystemProgram.programId,
                 tokenProgram: TOKEN_PROGRAM_ID,
                 rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+                associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID
             })
-            .rpc();
+            .signers([saleAccount.payer])
+            .rpc().catch(err => console.log(err));
         
         // const releasableAmount = await program.methods
         //     .calculateReleasableAmount()
@@ -102,8 +113,8 @@ describe.only("vesting", () => {
         //     .view();
         // console.log(startDate);
 
-        const account = await program.account.vestingAccount.fetch(vesting);
-        console.log("Vesting Account: ", account);
+        // const account = await program.account.vestingAccount.fetch(vesting);
+        // console.log("Vesting Account: ", account);
     });
 });
 

@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Token, TokenAccount, Transfer};
+use anchor_spl::{associated_token::{self, AssociatedToken}, token::{self, Mint, Token, TokenAccount, Transfer}};
 
 use crate::state::vesting::{VestingAccount, VestingType};
 
@@ -7,8 +7,8 @@ use crate::state::vesting::{VestingAccount, VestingType};
 pub struct InitializeVestingAccount<'info> {
     #[account(
         init,
-        payer = authority,
-        seeds = [user.key.as_ref(), target_token.key.as_ref()],
+        payer = signer,
+        seeds = [user.key.as_ref(), target_token.key().as_ref()],
         bump,
         space = 8 + 8 + 8 + 8 + 1
     )]
@@ -19,18 +19,23 @@ pub struct InitializeVestingAccount<'info> {
     )]
     pub sale_account: Account<'info, TokenAccount>,
     #[account(mut)]
-    pub vault_account: Account<'info, TokenAccount>, 
+    /// CHECK:
+    pub vault_token_account: AccountInfo<'info>,
+    #[account(mut)]
+    /// CHECK:
+    pub vault_account: AccountInfo<'info>,
     #[account(mut)]
     /// CHECK:
     pub user: AccountInfo<'info>,
     #[account(mut)]
     /// CHECK:
-    pub target_token: AccountInfo<'info>,
+    pub target_token: Account<'info, Mint>,
     #[account(mut)]
-    pub authority: Signer<'info>,
+    pub signer: Signer<'info>,
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
     pub rent: Sysvar<'info, Rent>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
 }
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct VestingParams {
@@ -52,11 +57,23 @@ pub fn initialize_vesting(
     vesting_account.released_amount = 0;
     vesting_account.vesting_type = params.vesting_type;
 
+    let _ = associated_token::create(CpiContext::new(
+        ctx.accounts.associated_token_program.to_account_info(),
+        associated_token::Create {
+            payer: ctx.accounts.signer.to_account_info(),
+            associated_token: ctx.accounts.vault_token_account.to_account_info(),
+            authority: ctx.accounts.vault_account.to_account_info(),
+            mint: ctx.accounts.target_token.to_account_info(),
+            system_program: ctx.accounts.system_program.to_account_info(),
+            token_program: ctx.accounts.token_program.to_account_info(),
+        },
+    ));
+
     // Transfer tokens to the vault account
     let cpi_accounts = Transfer {
         from: ctx.accounts.sale_account.to_account_info(),
-        to: ctx.accounts.vault_account.to_account_info(),
-        authority: ctx.accounts.authority.to_account_info(),
+        to: ctx.accounts.vault_token_account.to_account_info(),
+        authority: ctx.accounts.signer.to_account_info(),
     };
 
     let cpi_program = ctx.accounts.token_program.to_account_info();
@@ -66,5 +83,3 @@ pub fn initialize_vesting(
 
     Ok(())
 }
-
-// pda program
