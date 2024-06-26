@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::{associated_token::{self, AssociatedToken}, token::{self, Mint, Token, TokenAccount, Transfer}};
 
-use crate::state::vesting::{VestingAccount, VestingType};
+use crate::state::vesting::{Vesting, VestingType};
 
 #[derive(Accounts)]
 pub struct InitializeVestingAccount<'info> {
@@ -12,7 +12,7 @@ pub struct InitializeVestingAccount<'info> {
         bump,
         space = 8 + 8 + 8 + 8 + 1
     )]
-    pub vesting: Account<'info, VestingAccount>,
+    pub vesting: Account<'info, Vesting>,
     #[account(
         mut,
         constraint = sale_token_account.mint.key() == target_token.key()
@@ -65,7 +65,7 @@ pub fn initialize_vesting(
         },
     ));
 
-    // Transfer tokens to the vault account
+    // Transfer tokens in the vesting
     let cpi_accounts = Transfer {
         from: ctx.accounts.sale_token_account.to_account_info(),
         to: ctx.accounts.vesting_token_account.to_account_info(),

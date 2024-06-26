@@ -3,7 +3,7 @@ use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 
 use crate::{
     error::VestingError,
-    state::vesting::VestingAccount,
+    state::vesting::Vesting,
 };
 #[derive(Accounts)]
 pub struct ClaimTokens<'info> {
@@ -12,7 +12,7 @@ pub struct ClaimTokens<'info> {
         seeds = [user.key.as_ref(), target_token.key().as_ref()],
         bump
     )]
-    pub vesting: Account<'info, VestingAccount>,
+    pub vesting: Account<'info, Vesting>,
     #[account(mut)]
     pub user: Signer<'info>,
     #[account(
