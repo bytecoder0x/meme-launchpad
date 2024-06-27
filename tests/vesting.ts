@@ -10,6 +10,7 @@ import {
 } from "@solana/spl-token";
 import { expect } from "chai";
 import { BN } from "bn.js";
+import { expectFail } from "./helpers/test";
 
 describe.only("Vesting", () => {
     const provider = anchor.AnchorProvider.env();
@@ -96,6 +97,21 @@ describe.only("Vesting", () => {
             return { user, userATA, vesting, vestingATA };
     }
 
+    async function claimTokens(params: any) {
+        await program.methods
+            .claimTokens()
+            .accounts({
+                vesting: params.vesting,
+                userTokenAccount: params.userATA,
+                vestingTokenAccount: params.vestingATA,
+                targetToken: paymentToken.publicKey,
+                tokenProgram: TOKEN_PROGRAM_ID,
+                user: params.user.publicKey,
+            })
+            .signers([params.user])
+            .rpc();
+    }
+
     function delay(ms: number) {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
@@ -142,22 +158,9 @@ describe.only("Vesting", () => {
             vestingType: { simple: {} },
         }
 
-        const { user, userATA, vesting, vestingATA} = await createVesting(vestingParams);
-        
+        const { user, userATA, vesting, vestingATA } = await createVesting(vestingParams);
         await delay(2000); // 2s
-
-        await program.methods
-            .claimTokens()
-            .accounts({
-                vesting: vesting,
-                userTokenAccount: userATA,
-                vestingTokenAccount: vestingATA,
-                targetToken: paymentToken.publicKey,
-                tokenProgram: TOKEN_PROGRAM_ID,
-                user: user.publicKey,
-            })
-            .signers([user])
-            .rpc().catch(err => console.log(err));
+        await claimTokens({ user, userATA, vesting, vestingATA })
 
         const userBalance = (await provider.connection.getTokenAccountBalance(userATA)).value.amount;
         const vestingBalace = (await provider.connection.getTokenAccountBalance(vestingATA)).value.amount;
@@ -171,7 +174,7 @@ describe.only("Vesting", () => {
     it("Should correctly claim tokens for Linear type vesting", async () => {
         const vestingParams = {
             startDate: Math.floor(Date.now() / 1000),
-            duration: 10,
+            duration: 4,
             amount: new anchor.BN(1000 * 10 ** 9),
             vestingType: { linear: {} },
         }
@@ -179,31 +182,32 @@ describe.only("Vesting", () => {
         const { user, userATA, vesting, vestingATA } = await createVesting(vestingParams);
         
         // we can assume that the delay time will be 3 seconds, since the execution of all async functions also take time
-        await delay(2000); // 3s
+        await delay(1500);
 
-        // since 3 seconds have passed and the vesting time is 10 seconds, we can claim 30% from the total amount
-        await program.methods
-            .claimTokens()
-            .accounts({
-                vesting: vesting,
-                userTokenAccount: userATA,
-                vestingTokenAccount: vestingATA,
-                targetToken: paymentToken.publicKey,
-                tokenProgram: TOKEN_PROGRAM_ID,
-                user: user.publicKey,
-            })
-            .signers([user])
-            .rpc().catch(err => console.log(err));
+        // since 3 seconds have passed and the vesting time is 10 seconds, we can claim 60% from the total amount
+        await claimTokens({ user, userATA, vesting, vestingATA })
 
-        const userBalance = (await provider.connection.getTokenAccountBalance(userATA)).value.amount;
-        const vestingBalace = (await provider.connection.getTokenAccountBalance(vestingATA)).value.amount;
-        const vestingPDA = await program.account.vesting.fetch(vesting);    
+        let userBalance = (await provider.connection.getTokenAccountBalance(userATA)).value.amount;
+        let vestingBalace = (await provider.connection.getTokenAccountBalance(vestingATA)).value.amount;
+        let vestingPDA = await program.account.vesting.fetch(vesting);    
 
-        const tokens70Percent = (700 * 10 ** 9).toString();
-        const tokens30Percent = (300 * 10 ** 9).toString();
+        const tokens50Percent = (500 * 10 ** 9).toString();
 
-        expect(vestingBalace).to.be.eq(tokens70Percent); // 100% - 30% = 70%
-        expect(vestingPDA.releasedAmount.toString()).to.be.eq(tokens30Percent);
+        expect(vestingBalace).to.be.eq(tokens50Percent); // 100% - 50% = 50%
+        expect(vestingPDA.releasedAmount.toString()).to.be.eq(tokens50Percent);
+        expect(userBalance).to.be.eq(vestingPDA.releasedAmount.toString());
+
+        await delay(2000); // after this we can claim all token amount
+        await claimTokens({ user, userATA, vesting, vestingATA });
+
+        userBalance = (await provider.connection.getTokenAccountBalance(userATA)).value.amount;
+        vestingBalace = (await provider.connection.getTokenAccountBalance(vestingATA)).value.amount;
+        vestingPDA = await program.account.vesting.fetch(vesting);    
+
+        const tokens100Percent = (1000 * 10 ** 9).toString();
+
+        expect(vestingBalace).to.be.eq("0");
+        expect(vestingPDA.releasedAmount.toString()).to.be.eq(tokens100Percent);
         expect(userBalance).to.be.eq(vestingPDA.releasedAmount.toString());
     });
 
@@ -217,32 +221,43 @@ describe.only("Vesting", () => {
 
         const { user, userATA, vesting, vestingATA } = await createVesting(vestingParams);
 
-        await delay(2000);
-
-        // since 2 seconds have passed and the vesting time is 10 seconds, we can claim 20%
-        await program.methods
-            .claimTokens()
-            .accounts({
-                vesting: vesting,
-                userTokenAccount: userATA,
-                vestingTokenAccount: vestingATA,
-                targetToken: paymentToken.publicKey,
-                tokenProgram: TOKEN_PROGRAM_ID,
-                user: user.publicKey,
-            })
-            .signers([user])
-            .rpc().catch(err => console.log(err));
-
-        const userBalance = (await provider.connection.getTokenAccountBalance(userATA)).value.amount;
-        const vestingBalace = (await provider.connection.getTokenAccountBalance(vestingATA)).value.amount;
-        const vestingPDA = await program.account.vesting.fetch(vesting);    
-
-        const tokens80Percent = (800 * 10 ** 9).toString();
-        const tokens20Percent = (200 * 10 ** 9).toString();
-
-        expect(vestingBalace).to.be.eq(tokens80Percent); // 100% - 20% = 80%
-        expect(vestingPDA.releasedAmount.toString()).to.be.eq(tokens20Percent);
-        expect(userBalance).to.be.eq(vestingPDA.releasedAmount.toString());
+        for (let i = 0; i < 5; i++) {
+            await delay(1700); // 2 seconds delay
+        
+            // Claim tokens after delay
+            await claimTokens({ user, userATA, vesting, vestingATA });
+        
+            const userBalance = (await provider.connection.getTokenAccountBalance(userATA)).value.amount;
+            const vestingBalance = (await provider.connection.getTokenAccountBalance(vestingATA)).value.amount;
+            const vestingPDA = await program.account.vesting.fetch(vesting);    
+        
+            const releasedPercent = 20 * (i + 1); // 20% each iteration
+            const remainingPercent = 100 - releasedPercent;
+            const tokensReleased = (releasedPercent * Number(vestingParams.amount) / 100).toString();
+            const tokensRemaining = (remainingPercent * Number(vestingParams.amount) / 100).toString();
+        
+            expect(vestingBalance).to.be.eq(tokensRemaining);
+            expect(vestingPDA.releasedAmount.toString()).to.be.eq(tokensReleased);
+            expect(userBalance).to.be.eq(vestingPDA.releasedAmount.toString());
+        }
     });
+
+    it("Should prevent claim tokens if not available due to time or all tokens claimed", async () => {
+        const vestingParams = {
+            startDate: Math.floor(Date.now() / 1000),
+            duration: 2,
+            amount: new anchor.BN(1000 * 10 ** 9),
+            vestingType: { simple: {} },
+        }
+
+        const { user, userATA, vesting, vestingATA } = await createVesting(vestingParams);
+
+        await expectFail(claimTokens({ user, userATA, vesting, vestingATA }), "Cannot claim: zero tokens available");
+        
+        await delay(2000);
+        await claimTokens({ user, userATA, vesting, vestingATA });
+
+        await expectFail(claimTokens({ user, userATA, vesting, vestingATA }), "Cannot claim: zero tokens available");
+    })
     
 });
