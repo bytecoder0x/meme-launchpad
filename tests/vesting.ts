@@ -144,7 +144,7 @@ describe.only("Vesting", () => {
 
         const { user, userATA, vesting, vestingATA} = await createVesting(vestingParams);
         
-        await delay(2000); // 5s
+        await delay(2000); // 2s
 
         await program.methods
             .claimTokens()
@@ -207,15 +207,42 @@ describe.only("Vesting", () => {
         expect(userBalance).to.be.eq(vestingPDA.releasedAmount.toString());
     });
 
-    it.only("Should correctly claim tokens for Discreate type vesting", async () => {
+    it("Should correctly claim tokens for Discreate type vesting", async () => {
         const vestingParams = {
             startDate: Math.floor(Date.now() / 1000),
             duration: 10,
             amount: new anchor.BN(1000 * 10 ** 9),
-            vestingType: { discreate: [new BN(8)] }, // BUG
+            vestingType: { discreate: [2] }, // we can claim every two seconds 20 % from total amount
         }
 
         const { user, userATA, vesting, vestingATA } = await createVesting(vestingParams);
+
+        await delay(2000);
+
+        // since 2 seconds have passed and the vesting time is 10 seconds, we can claim 20%
+        await program.methods
+            .claimTokens()
+            .accounts({
+                vesting: vesting,
+                userTokenAccount: userATA,
+                vestingTokenAccount: vestingATA,
+                targetToken: paymentToken.publicKey,
+                tokenProgram: TOKEN_PROGRAM_ID,
+                user: user.publicKey,
+            })
+            .signers([user])
+            .rpc().catch(err => console.log(err));
+
+        const userBalance = (await provider.connection.getTokenAccountBalance(userATA)).value.amount;
+        const vestingBalace = (await provider.connection.getTokenAccountBalance(vestingATA)).value.amount;
+        const vestingPDA = await program.account.vesting.fetch(vesting);    
+
+        const tokens80Percent = (800 * 10 ** 9).toString();
+        const tokens20Percent = (200 * 10 ** 9).toString();
+
+        expect(vestingBalace).to.be.eq(tokens80Percent); // 100% - 20% = 80%
+        expect(vestingPDA.releasedAmount.toString()).to.be.eq(tokens20Percent);
+        expect(userBalance).to.be.eq(vestingPDA.releasedAmount.toString());
     });
     
 });

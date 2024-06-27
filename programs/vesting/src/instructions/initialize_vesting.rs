@@ -10,7 +10,7 @@ pub struct InitializeVestingAccount<'info> {
         payer = signer,
         seeds = [user.key.as_ref(), target_token.key().as_ref()],
         bump,
-        space = 8 + 8 + 8 + 8 + 1
+        space = 8 + Vesting::INIT_SPACE
     )]
     pub vesting: Account<'info, Vesting>,
     #[account(

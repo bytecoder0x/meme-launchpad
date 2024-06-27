@@ -1,6 +1,7 @@
 use anchor_lang::prelude::*;
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
+#[derive(InitSpace)]
 pub enum VestingType {
     Simple,
     Linear,
@@ -8,6 +9,7 @@ pub enum VestingType {
 }
 
 #[account]
+#[derive(InitSpace)]
 pub struct Vesting { 
     pub start_date: u32,
     pub duration: u32,
