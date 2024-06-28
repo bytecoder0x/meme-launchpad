@@ -15,14 +15,6 @@ pub mod meme_launchpad {
         Ok(())
     }
 
-    // pub fn create_token(ctx: Context<CreateToken>, data: CreateTokenParams) -> Result<()> {
-    //     return instructions::create_token(ctx, data);
-    // }
-
-    // pub fn create_sale(ctx: Context<CreateSale>, data: CreateSaleParams) -> Result<()> {
-    //     return instructions::create_sale(ctx, data);
-    // }
-
     pub fn create_launchpad(ctx: Context<CreateTokenAndSale>, data: CreateTokenAndSaleParams) -> Result<()> {
         return instructions::create_token_and_sale(ctx, data);
     }

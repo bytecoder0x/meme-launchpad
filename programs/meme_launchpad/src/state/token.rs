@@ -1,10 +1,15 @@
 use anchor_lang::{prelude::*, system_program, solana_program::program::{invoke, invoke_signed}};
 use anchor_spl::{
-    associated_token::{self, AssociatedToken},
-    token, token_2022,
-    token_interface::{spl_token_2022::instruction::AuthorityType, Token2022},
+    token_2022,
+    token_interface::{
+        default_account_state,
+        spl_token_2022::instruction::AuthorityType,
+        Token2022, 
+        ThawAccount,
+        thaw_account
+    }
 };
-use spl_token_2022::{extension::ExtensionType, state::Mint};
+use spl_token_2022::{extension::ExtensionType, state::{AccountState, Mint}};
 
 #[account]
 pub struct TokenAuthority {}
@@ -29,7 +34,7 @@ pub fn _create_token<'a>(
     params: CreateTokenParams,
 ) -> Result<()> {
     // calculate the space need for the mint account with the desired extensions
-    let space = ExtensionType::try_calculate_account_len::<Mint>(&[ExtensionType::MetadataPointer])
+    let space = ExtensionType::try_calculate_account_len::<Mint>(&[ExtensionType::MetadataPointer, ExtensionType::DefaultAccountState])
         .unwrap();
 
     let meta_data_space = 250;
@@ -81,6 +86,19 @@ pub fn _create_token<'a>(
         &[mint.to_account_info(), authority.to_account_info()],
     )?;
 
+
+    let default_account_state_ix = 
+    spl_token_2022::extension::default_account_state::instruction::initialize_default_account_state(
+        &Token2022::id(),
+         &mint.key(),
+        &AccountState::Frozen
+    ).unwrap();
+
+    invoke(
+        &default_account_state_ix,
+        &[mint.to_account_info()],
+    )?;
+
     // Initialize the mint cpi
     let mint_cpi_ix = CpiContext::new(
         token_program.to_account_info(),
@@ -89,7 +107,9 @@ pub fn _create_token<'a>(
         },
     );
 
-    token_2022::initialize_mint2(mint_cpi_ix, params.decimals, &authority.key(), None).unwrap();
+    token_2022::initialize_mint2(mint_cpi_ix, params.decimals, &authority.key(), Some(&authority.key())).unwrap();
+
+
 
     // We use a PDA as a mint authority for the metadata account because
     // we want to be able to update the NFT from the program.
@@ -118,6 +138,7 @@ pub fn _create_token<'a>(
         ],
         signer,
     )?;
+    
 
     Ok(())
 }
@@ -137,6 +158,18 @@ pub fn _mint_token_and_froze<'a>(
 
     for ((token_account, amount), msg) in token_accounts.iter().zip(amounts).zip(mint_msgs) {
         
+
+        let cpi_context = CpiContext::new_with_signer(
+            token_program.to_account_info(),
+            ThawAccount {
+                account : token_account.to_account_info(),
+                mint : mint.to_account_info(),
+                authority : authority.to_account_info()
+            },
+            signer
+        );
+        thaw_account(cpi_context)?;
+
         msg!("Meme Launchpad: {} mint", msg); 
         token_2022::mint_to(
             CpiContext::new_with_signer(

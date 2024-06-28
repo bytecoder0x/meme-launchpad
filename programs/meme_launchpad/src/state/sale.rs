@@ -1,8 +1,5 @@
-use anchor_lang::{solana_program,  prelude::*};
-use anchor_spl::{
-    associated_token,
-    token::{Mint, Token, TokenAccount},
-};
+use anchor_lang::{prelude::*, solana_program};
+use anchor_spl::associated_token;
 
 #[derive(Copy, Clone, PartialEq, AnchorSerialize, AnchorDeserialize, Default, Debug)]
 pub struct BidderStats {
@@ -31,7 +28,7 @@ pub struct CommonParams {
     pub seller_link: String,
     pub start_time: i64,
     pub end_time: i64,
-    pub sale_delay: i64,
+    pub close_time: i64,
 }
 
 #[derive(Copy, Clone, PartialEq, AnchorSerialize, AnchorDeserialize, Debug)]
@@ -106,7 +103,7 @@ impl CommonParams {
     // todo: check
     pub fn validate(&self, curtime: i64) -> bool {
         (self.end_time > 0 && self.start_time > 0)
-                || (self.end_time > self.start_time && self.end_time > curtime)
+            || (self.end_time > self.start_time && self.end_time > curtime)
     }
 }
 
@@ -136,10 +133,15 @@ impl Sale {
         curtime >= self.common.end_time
     }
 
-    #[cfg(feature = "test")]
-    pub fn get_time(&self) -> Result<i64> {
-        Ok(self.creation_time)
+    /// Checks if the sale is ready to close
+    pub fn is_ready_to_close(&self, curtime: i64) -> bool {
+        curtime >= self.common.close_time
     }
+
+    // #[cfg(feature = "test")]
+    // pub fn get_time(&self) -> Result<i64> {
+    //     Ok(self.creation_time)
+    // }
 
     #[cfg(not(feature = "test"))]
     pub fn get_time(&self) -> Result<i64> {
@@ -178,9 +180,7 @@ impl Sale {
     fn get_sale_price_fixed(&self) -> Result<u64> {
         Ok(self.pricing.start_price)
     }
-
 }
-
 
 #[derive(AnchorSerialize, AnchorDeserialize)]
 pub struct CreateSaleParams {
@@ -202,10 +202,10 @@ pub fn _create_sale<'info>(
     associated_token_program: AccountInfo<'info>,
     system_program: AccountInfo<'info>,
     token_program: AccountInfo<'info>,
-    params: CreateSaleParams
+    params: CreateSaleParams,
 ) -> Result<()> {
     msg!("Creating Sale Account");
-    
+
     let cpi_ctx = CpiContext::new(
         associated_token_program.to_account_info(),
         associated_token::Create {
@@ -215,9 +215,9 @@ pub fn _create_sale<'info>(
             mint: target_token.to_account_info(),
             system_program: system_program.to_account_info(),
             token_program: token_program.to_account_info(),
-        }
+        },
     );
-    
+
     let _ = associated_token::create(cpi_ctx);
 
     msg!("Creating payment associated token account");
@@ -232,18 +232,9 @@ pub fn _create_sale<'info>(
             token_program: token_program.to_account_info(),
         },
     ));
-    
+
     msg!("Setting Sale Account");
     msg!("sale amount: {}", params.sale_amount);
-    
-    // let mut sale = _sale.try_borrow_mut_data();
-    // let mut sale = _sale.try_borrow_mut_data()?;
-    
-    // let sale = Account::<Sale>::try_from(_sale)?;
-    
-    // write data to _sale account
-    // let mut sale = Sale::try_from_slice(&_sale.data.borrow())?;
-    // let mut sale = Sale::default();
 
     let sale = _sale;
 
@@ -257,11 +248,6 @@ pub fn _create_sale<'info>(
     sale.pricing = params.pricing;
     sale.creation_time = sale.get_time()?;
     sale.bump = sale_bump;
-
-
-    // let data_bytes = sale.try_to_vec().map_err(|_| ProgramError::InvalidAccountData)?;
-    // _sale.data.borrow_mut()[..data_bytes.len()].copy_from_slice(&data_bytes);
-    // sale.
 
     Ok(())
 }

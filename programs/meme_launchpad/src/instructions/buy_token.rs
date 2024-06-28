@@ -1,14 +1,19 @@
 use anchor_lang::prelude::*;
-use anchor_spl::{
-    
-    token_interface::{TokenInterface, Mint, TokenAccount, Transfer,TransferChecked, transfer_checked},
-    // token::{
-    // transfer, Token, Transfer}
+use anchor_spl::token_interface::{
+    transfer_checked,
+    Mint,
+    TokenAccount,
+    TokenInterface,
+    TransferChecked,
+    ThawAccount,
+    thaw_account,
+    freeze_account,
+    FreezeAccount,
 };
 
 use crate::{
     error::MemeLaunchpadError,
-    state::sale::Sale,
+    state::{sale::Sale, token::TokenAuthority},
 };
 
 #[derive(Accounts)]
@@ -22,6 +27,12 @@ pub struct BuyToken<'info> {
         bump
     )]
     pub sale: Box<Account<'info, Sale>>,
+
+    #[account(
+        seeds = [b"authority".as_ref()],
+        bump
+    )]
+    pub authority: Account<'info, TokenAuthority>,
 
     pub target_token: InterfaceAccount<'info, Mint>,
 
@@ -111,6 +122,7 @@ pub fn buy_token(ctx: Context<BuyToken>, params: BuyTokenParams) -> Result<()> {
 
     // todo: impelement vesting
 
+    
     let target_key = ctx.accounts.target_token.key();
     // signer seeds for sale
     let seeds: &[&[&[u8]]] = &[&[
@@ -118,6 +130,20 @@ pub fn buy_token(ctx: Context<BuyToken>, params: BuyTokenParams) -> Result<()> {
         target_key.as_ref(),
         &[ctx.bumps.sale]
     ]];
+
+    let authority_signer: &[&[&[u8]]] = &[&[b"authority", &[ctx.bumps.authority]]];
+
+
+    let thaw_cpi_context = CpiContext::new_with_signer(
+        ctx.accounts.token_program.to_account_info(),
+        ThawAccount {
+            account : ctx.accounts.user_target_token_account.to_account_info(),
+            mint : ctx.accounts.target_token.to_account_info(),
+            authority : ctx.accounts.authority.to_account_info()
+        },
+        authority_signer
+    );
+    thaw_account(thaw_cpi_context)?;
 
     msg!("transfer target");
     // transfer amount_out from sale_target_token_account to user_target_token_account
@@ -132,6 +158,18 @@ pub fn buy_token(ctx: Context<BuyToken>, params: BuyTokenParams) -> Result<()> {
         seeds,
     );
     transfer_checked(out_cpi_ctx, amount_out, ctx.accounts.target_token.decimals)?;
+
+
+    let froze_cpi_context = CpiContext::new_with_signer(
+        ctx.accounts.token_program.to_account_info(),
+        FreezeAccount {
+            account : ctx.accounts.user_target_token_account.to_account_info(),
+            mint : ctx.accounts.target_token.to_account_info(),
+            authority : ctx.accounts.authority.to_account_info()
+        },
+        authority_signer
+    );
+    freeze_account(froze_cpi_context)?;
 
     sale.already_sold += amount_out;
 
