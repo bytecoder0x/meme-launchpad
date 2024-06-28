@@ -1,10 +1,9 @@
-use anchor_lang::{prelude::*, system_program};
+use anchor_lang::{prelude::*, system_program, solana_program::program::{invoke, invoke_signed}};
 use anchor_spl::{
     associated_token::{self, AssociatedToken},
     token, token_2022,
     token_interface::{spl_token_2022::instruction::AuthorityType, Token2022},
 };
-use solana_program::program::{invoke, invoke_signed};
 use spl_token_2022::{extension::ExtensionType, state::Mint};
 
 #[account]
