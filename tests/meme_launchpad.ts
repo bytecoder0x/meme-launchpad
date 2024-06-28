@@ -22,10 +22,20 @@ import {
 import { expect } from "chai";
 import { getCreateSaleAddresses, getPurshaseAddresses } from "./helpers/sale";
 import { createATA } from "./helpers/token";
-import {expectFail} from "./helpers/test";
+import { expectFail } from "./helpers/test";
 // const Day = 24 * 60 * 60 * 1000;
 // seconds in day
 const Day = 24 * 60 * 60;
+
+export function u16ToBytes(num: number) {
+  const arr = new ArrayBuffer(2);
+  const view = new DataView(arr);
+  view.setUint16(0, num, false);
+  return new Uint8Array(arr);
+}
+
+const RAYDIUM_PROGRAM_ID = new PublicKey('CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C');
+const createPoolFeeReveiver = new PublicKey('DNXgeM9EiiaAbaWvwjHj9fQQLAX5ZsfHyvmYUNRAdNC8');
 
 describe("meme_launchpad", () => {
   // Configure the client to use the local cluster.
@@ -67,53 +77,6 @@ describe("meme_launchpad", () => {
 
   });
 
-  // it("Is initialized!", async () => {
-  //   // Add your test here.
-  //   const tx = await program.methods.initialize().rpc();
-  //   console.log("Your transaction signature", tx);
-  // });
-
-  // it("create token", async () => {
-
-  //   const params = {
-  //     name: "Meme Launchpad",
-  //     symbol: "ML",
-  //     decimals: 8,
-  //     uri: "",
-  //   }
-
-  //   const mint = anchor.web3.Keypair.generate();
-  //   const tokenAccount = await getAssociatedTokenAddress(
-  //     mint.publicKey, 
-  //     wallet.publicKey,
-  //     false,
-  //     TOKEN_2022_PROGRAM_ID
-  //   );
-
-  //   const authority = anchor.web3.PublicKey.findProgramAddressSync(
-  //     [
-  //       Buffer.from("authority")
-  //     ],
-  //     program.programId
-  //   )[0]
-
-  //   // Add your test here.
-  //   const tx = await program.methods.createToken(params).accounts({
-  //     signer: wallet.publicKey,
-  //     mint: mint.publicKey,
-  //     tokenAccount: tokenAccount,
-  //     tokenProgram: TOKEN_2022_PROGRAM_ID,
-  //     authority: authority,
-  //     associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
-  //     systemProgram: anchor.web3.SystemProgram.programId,
-  //     rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-
-  //   }).signers([wallet.payer, mint]).rpc().catch(e => console.error(e));
-
-  //   const userTokenAccount = await provider.connection.getTokenAccountBalance(tokenAccount);
-  //   console.log("userTokenAccount", userTokenAccount);
-  // });
-
   it("create launchpad", async () => {
     const token_params = {
       name: "Meme Launchpad",
@@ -132,7 +95,7 @@ describe("meme_launchpad", () => {
         sellerLink: "Lihk",
         startTime: new BN(start),
         endTime: new BN(end),
-        saleDelay: new BN(end + 1 * Day),
+        closeTime: new BN(end + 1 * Day),
       },
       pricing: {
         pricingModel: { fixed: {} },
@@ -274,6 +237,8 @@ describe("meme_launchpad", () => {
       ...purshaseAddresses,
     }).signers([user]).rpc().catch(e => console.error(e));
 
+    const userTokenAccount = await provider.connection.getTokenAccountBalance(purshaseAddresses.userTargetTokenAccount);
+    console.log("userTokenAccount", userTokenAccount);
   });
 
   it.skip('sale timerange test', async () => {
@@ -361,7 +326,7 @@ describe("meme_launchpad", () => {
       ).accounts({ ...purshaseAddresses }).signers([user]).rpc(),
       "Sale hasn't started"
     )
-    
+
     await new Promise((resolve) => setTimeout(resolve, 20000));
 
     await program.methods.buyToken(
@@ -384,4 +349,124 @@ describe("meme_launchpad", () => {
     )
   })
 
+  it('close sale', async () => {
+    const sale = anchor.web3.PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("sale"),
+        mint.publicKey.toBuffer(),
+      ],
+      program.programId
+    )[0]
+
+    const amm_config = PublicKey.findProgramAddressSync(
+      [Buffer.from('amm_config'), u16ToBytes(0)],
+      RAYDIUM_PROGRAM_ID
+    )[0];
+
+    console.log("AMM: " + amm_config.toBase58())
+    console.log(await provider.connection.getAccountInfo(amm_config))
+
+    const raydiumAuthority = PublicKey.findProgramAddressSync(
+      [Buffer.from('vault_and_lp_mint_auth_seed')],
+      RAYDIUM_PROGRAM_ID
+    )[0];
+
+    const isTargetTokenLess = mint.publicKey < paymentToken.publicKey;
+    const poolState = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from('pool'),
+        amm_config.toBytes(),
+        ...(isTargetTokenLess ? [mint.publicKey.toBytes(), paymentToken.publicKey.toBytes()] : [paymentToken.publicKey.toBytes(), mint.publicKey.toBytes()]),
+      ],
+      RAYDIUM_PROGRAM_ID
+    )[0];
+
+    const lpMint = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from('pool_lp_mint'),
+        poolState.toBytes(),
+      ],
+      RAYDIUM_PROGRAM_ID
+    )[0];
+
+
+    const saleTargetTokenAccount = getAssociatedTokenAddressSync(
+      mint.publicKey,
+      sale,
+      true,
+      TOKEN_2022_PROGRAM_ID
+    );
+
+    const salePaymentTokenAccount = getAssociatedTokenAddressSync(
+      paymentToken.publicKey,
+      sale,
+      true,
+      TOKEN_2022_PROGRAM_ID
+    );
+
+    const creator_lp_token = getAssociatedTokenAddressSync(
+      lpMint,
+      sale,
+      true,
+      TOKEN_2022_PROGRAM_ID
+    );
+
+    const targetTokenVault = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("pool_vault"),
+        poolState.toBytes(),
+        mint.publicKey.toBytes(),
+      ],
+      RAYDIUM_PROGRAM_ID
+    )[0];
+
+    const paymentTokenVault = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("pool_vault"),
+        poolState.toBytes(),
+        paymentToken.publicKey.toBytes(),
+      ],
+      RAYDIUM_PROGRAM_ID
+    )[0];
+
+    const observation_state = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("observation"),
+        poolState.toBytes(),
+      ],
+      RAYDIUM_PROGRAM_ID
+    )[0];
+
+    const authority = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("authority")
+      ],
+      program.programId
+    )[0];
+
+    const tx = await program.methods.closeSale().accounts({
+      signer: wallet.publicKey,
+      ammConfig: amm_config,
+      raydiumAuthority: raydiumAuthority,
+      poolState: poolState,
+      lpMint: lpMint,
+      saleTargetTokenAccount: saleTargetTokenAccount,
+      salePaymentTokenAccount: salePaymentTokenAccount,
+      creatorLpToken: creator_lp_token,
+      targetTokenVault: targetTokenVault,
+      paymentTokenVault: paymentTokenVault,
+      createPoolFee: createPoolFeeReveiver,
+      observationState: observation_state,
+      sale: sale,
+      authority: authority,
+      targetToken: mint.publicKey,
+      paymentToken: paymentToken.publicKey,
+      targetTokenProgram: TOKEN_2022_PROGRAM_ID,
+      paymentTokenProgram: TOKEN_2022_PROGRAM_ID,
+      cpSwapProgram: RAYDIUM_PROGRAM_ID,
+      associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+      systemProgram: anchor.web3.SystemProgram.programId,
+      rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+    }).signers([wallet.payer]).rpc().catch(e => console.error(e));
+  })
 });

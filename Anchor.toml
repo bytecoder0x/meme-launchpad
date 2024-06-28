@@ -19,3 +19,20 @@ wallet = "~/.config/solana/id.json"
 
 [scripts]
 test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/*.ts"
+
+[[test.genesis]]
+address = "CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C"  
+program = "tests/dumps/raydium_cp_swap.so"
+
+[[test.validator.account]]
+address = "GThUX1Atko4tqhN2NaiTazWSeFWMuiUvfFnyJyUghFMJ"
+filename = "tests/dumps/raydium_admin.json"
+
+[[test.validator.account]]
+address = "DNXgeM9EiiaAbaWvwjHj9fQQLAX5ZsfHyvmYUNRAdNC8"
+filename = "tests/dumps/raydium_create_pool_fee_reveiver.json"
+
+[[test.validator.account]]
+address = "D4FPEruKEHrG5TenZ2mpDGEfu1iUvTiqBxvpU8HLBvC2"
+filename = "tests/dumps/amm_config_0.json"
+

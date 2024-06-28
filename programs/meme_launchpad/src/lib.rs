@@ -22,6 +22,10 @@ pub mod meme_launchpad {
     pub fn buy_token(ctx: Context<BuyToken>, data: BuyTokenParams) -> Result<()> {
         return instructions::buy_token(ctx, data);
     }
+
+    pub fn close_sale(ctx: Context<CloseSale>) -> Result<()> {
+        return instructions::close_sale(ctx);
+    }
 }
 
 #[derive(Accounts)]

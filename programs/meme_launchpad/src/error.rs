@@ -86,4 +86,8 @@ pub enum MemeLaunchpadError {
     PriceCalcError,
     #[msg("This instruction must be all alone in the transaction")]
     MustBeSingleInstruction,
+    #[msg("Sale is not ready to close")]
+    SaleNotReadyToClose,
+    #[msg("Invalid pool state")]
+    InvalidPoolState
 }
