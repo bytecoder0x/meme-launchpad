@@ -22,3 +22,4 @@ anchor-spl = { version = "0.30.1" }
 spl-token-2022 = { version="3.0.2", features = [ "no-entrypoint" ] }
 spl-token = { version = "4.0.1", features = [ "no-entrypoint" ] }
 spl-token-metadata-interface = { version = "0.3.3"}
+vesting = { path = "../vesting", features = ["cpi"] }

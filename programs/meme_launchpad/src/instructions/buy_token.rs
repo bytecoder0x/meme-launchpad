@@ -1,14 +1,10 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token_interface::{
-    transfer_checked,
-    Mint,
-    TokenAccount,
-    TokenInterface,
-    TransferChecked,
-    ThawAccount,
-    thaw_account,
-    freeze_account,
-    FreezeAccount,
+use anchor_spl::{associated_token::AssociatedToken, token_interface::{
+    freeze_account, thaw_account, transfer_checked, FreezeAccount, Mint, ThawAccount, TokenAccount, TokenInterface, TransferChecked
+}};
+
+use vesting::{
+    cpi::{accounts::InitializeVestingAccount, create_vesting}, instructions::VestingParams, state::vesting::Vesting
 };
 
 use crate::{
@@ -70,8 +66,23 @@ pub struct BuyToken<'info> {
     )]
     pub user_target_token_account: InterfaceAccount<'info, TokenAccount>,
 
+    #[account(
+        init,
+        payer = signer,
+        seeds = [signer.key().as_ref(), target_token.key().as_ref()],
+        bump,
+        space = 8 + Vesting::INIT_SPACE
+    )]
+    pub vesting: Account<'info, Vesting>,
+
+    /// CHECK:
+    #[account(mut)]
+    pub vesting_target_token_account: AccountInfo<'info>,
+
     system_program: Program<'info, System>,
     pub token_program: Interface<'info, TokenInterface>,
+    pub vesting_program: Interface<'info, TokenInterface>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
     rent: Sysvar<'info, Rent>,
 }
 
@@ -106,6 +117,8 @@ pub fn buy_token(ctx: Context<BuyToken>, params: BuyTokenParams) -> Result<()> {
         return Err(MemeLaunchpadError::SaleLimitExceeded.into());
     }
 
+    let half_amount_out = amount_out / 2;
+
     msg!("transfer paymment");
     // transfer amount_in from user_payment_token_account to sale_payment_token_account
     let in_cpi_ctx = CpiContext::new(
@@ -120,9 +133,6 @@ pub fn buy_token(ctx: Context<BuyToken>, params: BuyTokenParams) -> Result<()> {
 
     transfer_checked(in_cpi_ctx, amount_in, ctx.accounts.payment_token.decimals)?;
 
-    // todo: impelement vesting
-
-    
     let target_key = ctx.accounts.target_token.key();
     // signer seeds for sale
     let seeds: &[&[&[u8]]] = &[&[
@@ -130,6 +140,32 @@ pub fn buy_token(ctx: Context<BuyToken>, params: BuyTokenParams) -> Result<()> {
         target_key.as_ref(),
         &[ctx.bumps.sale]
     ]];
+
+    let vesting_params = VestingParams {
+        start_date: curtime as u32,
+        duration: sale.vesting.duration,
+        amount: half_amount_out,
+        vesting_type: sale.vesting.vecting_model.clone(),
+    };
+
+    let vesting_cpi_ctx = CpiContext::new_with_signer(
+        ctx.accounts.vesting_program.to_account_info(),
+               InitializeVestingAccount {
+            vesting: ctx.accounts.vesting.to_account_info(),
+            sale_token_account: ctx.accounts.sale_target_token_account.to_account_info(),
+            vesting_token_account: ctx.accounts.vesting_target_token_account.to_account_info(),
+            user: ctx.accounts.signer.to_account_info(),
+            target_token: ctx.accounts.target_token.to_account_info(),
+            signer: sale.to_account_info(),
+            system_program: ctx.accounts.system_program.to_account_info(),
+            token_program: ctx.accounts.token_program.to_account_info(),
+            rent: ctx.accounts.rent.to_account_info(),
+            associated_token_program: ctx.accounts.associated_token_program.to_account_info(),
+        },
+        seeds
+    );
+
+    create_vesting(vesting_cpi_ctx, vesting_params)?;
 
     let authority_signer: &[&[&[u8]]] = &[&[b"authority", &[ctx.bumps.authority]]];
 
@@ -157,8 +193,7 @@ pub fn buy_token(ctx: Context<BuyToken>, params: BuyTokenParams) -> Result<()> {
         },
         seeds,
     );
-    transfer_checked(out_cpi_ctx, amount_out, ctx.accounts.target_token.decimals)?;
-
+    transfer_checked(out_cpi_ctx, half_amount_out, ctx.accounts.target_token.decimals)?;
 
     let froze_cpi_context = CpiContext::new_with_signer(
         ctx.accounts.token_program.to_account_info(),

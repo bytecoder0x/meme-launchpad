@@ -35,10 +35,10 @@ pub struct InitializeVestingAccount<'info> {
 }
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct VestingParams {
-    start_date: u32,
-    duration: u32,
-    amount: u64,
-    vesting_type: VestingType,
+    pub start_date: u32,
+    pub duration: u32,
+    pub amount: u64,
+    pub vesting_type: VestingType,
 }
 
 pub fn initialize_vesting(

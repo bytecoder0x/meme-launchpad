@@ -1269,6 +1269,7 @@ dependencies = [
  "spl-token",
  "spl-token-2022",
  "spl-token-metadata-interface",
+ "vesting",
 ]
 
 [[package]]
