@@ -2,7 +2,7 @@ import * as anchor from "@coral-xyz/anchor";
 import { BN, min } from "bn.js";
 import { Program } from "@coral-xyz/anchor";
 import { MemeLaunchpad } from "../target/types/meme_launchpad";
-import { ComputeBudgetInstruction, ComputeBudgetProgram, Keypair, PublicKey, Signer, Transaction, } from "@solana/web3.js";
+import { ComputeBudgetInstruction, ComputeBudgetProgram, Keypair, PublicKey, Signer, Transaction, SystemProgram } from "@solana/web3.js";
 import {
   createMint,
   createAccount,
@@ -31,8 +31,7 @@ describe.only("meme_launchpad", () => {
   // Configure the client to use the local cluster.
   const provider = anchor.AnchorProvider.env()
   anchor.setProvider(provider);
-  const vesting = anchor.workspace.Vesting;
-  vesting.programId
+
   const program = anchor.workspace.MemeLaunchpad as Program<MemeLaunchpad>;
   const wallet = provider.wallet as anchor.Wallet;
   const paymentToken = new anchor.web3.Keypair();
@@ -42,9 +41,7 @@ describe.only("meme_launchpad", () => {
 
   before(async () => {
     await createMint(provider.connection, wallet.payer, wallet.publicKey, wallet.publicKey, 9, paymentToken, {},
-      TOKEN_2022_PROGRAM_ID)
-      await createMint(provider.connection, wallet.payer, wallet.publicKey, wallet.publicKey, 9, mint, {},
-        TOKEN_2022_PROGRAM_ID)
+      TOKEN_2022_PROGRAM_ID);
 
     const ata = await createAssociatedTokenAccount(
       provider.connection,
@@ -142,6 +139,10 @@ describe.only("meme_launchpad", () => {
         amountFunction: { fixed: {} },
         startPrice: new BN(50),
       },
+      vesting: {
+        duration: 10,
+        vestingModel:{ discreate: [2] }, 
+      },
       saleAmount: new BN(1000).mul(new BN(10).pow(new BN(token_params.decimals))),
       liqAmount: new BN(700).mul(new BN(10).pow(new BN(token_params.decimals))),
     }
@@ -223,7 +224,7 @@ describe.only("meme_launchpad", () => {
     expect(freeTargetTokenAccount.value.amount).to.be.eq(new BN(588).mul(new BN(10).pow(new BN(token_params.decimals))).toString());
   })
 
-  it.only("buy token", async () => {
+  it("buy token", async () => {
 
     const params = {
       amount: new BN(100).mul(new BN(10).pow(new BN(8))),
@@ -255,6 +256,12 @@ describe.only("meme_launchpad", () => {
         TOKEN_2022_PROGRAM_ID,
         ASSOCIATED_TOKEN_PROGRAM_ID
       )
+    ).add(
+      SystemProgram.transfer({
+        fromPubkey: wallet.publicKey,
+        toPubkey: user.publicKey,
+        lamports: 1000000000, // 1 sol
+      })
     );
 
     await provider.sendAndConfirm(transaction, [wallet.payer]);
@@ -270,14 +277,11 @@ describe.only("meme_launchpad", () => {
       {},
       TOKEN_2022_PROGRAM_ID,
     )
-
-    const vestingProgram = anchor.workspace.Vesting.programId;
-
     await program.methods.buyToken(
       params
     ).accounts({
       ...purshaseAddresses,
-      vestingProgram,
+      vestingProgram: anchor.workspace.Vesting.programId
     }).signers([user]).rpc().catch(e => console.error(e));
 
   });

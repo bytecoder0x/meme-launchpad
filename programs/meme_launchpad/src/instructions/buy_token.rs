@@ -4,8 +4,11 @@ use anchor_spl::{associated_token::AssociatedToken, token_interface::{
 }};
 
 use vesting::{
-    cpi::{accounts::InitializeVestingAccount, create_vesting}, instructions::VestingParams, state::vesting::Vesting
+    cpi::{accounts::InitializeVestingAccount, create_vesting}, instructions::VestingParams, program::Vesting 
+    // instructions::VestingParams,
+    // state::vesting::Vesting
 };
+// use vesting::state::vesting::Vesting;
 
 use crate::{
     error::MemeLaunchpadError,
@@ -66,14 +69,9 @@ pub struct BuyToken<'info> {
     )]
     pub user_target_token_account: InterfaceAccount<'info, TokenAccount>,
 
-    #[account(
-        init,
-        payer = signer,
-        seeds = [signer.key().as_ref(), target_token.key().as_ref()],
-        bump,
-        space = 8 + Vesting::INIT_SPACE
-    )]
-    pub vesting: Account<'info, Vesting>,
+    /// CHECK:
+    #[account(mut)]
+    pub vesting: AccountInfo<'info>,
 
     /// CHECK:
     #[account(mut)]
@@ -81,7 +79,7 @@ pub struct BuyToken<'info> {
 
     system_program: Program<'info, System>,
     pub token_program: Interface<'info, TokenInterface>,
-    pub vesting_program: Interface<'info, TokenInterface>,
+    pub vesting_program: Program<'info, Vesting>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     rent: Sysvar<'info, Rent>,
 }
@@ -134,6 +132,7 @@ pub fn buy_token(ctx: Context<BuyToken>, params: BuyTokenParams) -> Result<()> {
     transfer_checked(in_cpi_ctx, amount_in, ctx.accounts.payment_token.decimals)?;
 
     let target_key = ctx.accounts.target_token.key();
+
     // signer seeds for sale
     let seeds: &[&[&[u8]]] = &[&[
         "sale".as_bytes(),
@@ -156,7 +155,7 @@ pub fn buy_token(ctx: Context<BuyToken>, params: BuyTokenParams) -> Result<()> {
             vesting_token_account: ctx.accounts.vesting_target_token_account.to_account_info(),
             user: ctx.accounts.signer.to_account_info(),
             target_token: ctx.accounts.target_token.to_account_info(),
-            signer: sale.to_account_info(),
+            signer: ctx.accounts.sale.to_account_info(),
             system_program: ctx.accounts.system_program.to_account_info(),
             token_program: ctx.accounts.token_program.to_account_info(),
             rent: ctx.accounts.rent.to_account_info(),

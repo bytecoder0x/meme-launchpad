@@ -16,14 +16,6 @@ export function getPurshaseAddresses(
         programId
     )[0]
 
-    const vesting = anchor.web3.PublicKey.findProgramAddressSync(
-        [
-            user.toBuffer(),
-            target_token.toBuffer()
-        ],
-        programId
-     )[0];
-
     const sale_target_token_account = getAssociatedTokenAddressSync(
         target_token,
         sale,
@@ -31,16 +23,24 @@ export function getPurshaseAddresses(
         TOKEN_2022_PROGRAM_ID
     );
 
-    const vesting_target_token_account = getAssociatedTokenAddressSync(
-        target_token,
-        vesting,
+    const sale_payment_token_account = getAssociatedTokenAddressSync(
+        payment_token,
+        sale,
         true,
         TOKEN_2022_PROGRAM_ID
     );
 
-    const sale_payment_token_account = getAssociatedTokenAddressSync(
-        payment_token,
-        sale,
+    const vesting = anchor.web3.PublicKey.findProgramAddressSync(
+        [
+            user.toBuffer(),
+            target_token.toBuffer()
+        ],
+        anchor.workspace.Vesting.programId
+     )[0];
+
+    const vesting_target_token_account = getAssociatedTokenAddressSync(
+        target_token,
+        vesting,
         true,
         TOKEN_2022_PROGRAM_ID
     );
