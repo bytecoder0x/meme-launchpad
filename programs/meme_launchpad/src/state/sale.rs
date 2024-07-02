@@ -239,6 +239,7 @@ pub fn _create_sale<'info>(
     let sale = _sale;
 
     sale.sale_amount = params.sale_amount;
+    sale.liq_amount = params.liq_amount;
     sale.already_sold = 0;
     sale.owner = owner.key();
     sale.token = target_token.key();

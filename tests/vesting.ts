@@ -12,7 +12,7 @@ import { expect } from "chai";
 import { BN } from "bn.js";
 import { expectFail } from "./helpers/test";
 
-describe.only("Vesting", () => {
+describe("Vesting", () => {
     const provider = anchor.AnchorProvider.env();
     anchor.setProvider(provider);
     const program = anchor.workspace.Vesting as anchor.Program<Vesting>;

@@ -22,6 +22,7 @@ export async function createATA(
             false,
             TOKEN_2022_PROGRAM_ID
         )
+        console.log('2 ' + ata.toBase58())
 
         transaction = transaction.add(
             createAssociatedTokenAccountInstruction(

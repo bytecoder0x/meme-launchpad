@@ -17,7 +17,9 @@ import {
   NATIVE_MINT_2022,
   getAssociatedTokenAddressSync,
   createAssociatedTokenAccount,
-  createAssociatedTokenAccountInstruction
+  createAssociatedTokenAccountInstruction,
+  transferChecked,
+  createTransferInstruction
 } from "@solana/spl-token";
 import { expect } from "chai";
 import { getCreateSaleAddresses, getPurshaseAddresses } from "./helpers/sale";
@@ -37,7 +39,7 @@ export function u16ToBytes(num: number) {
 const RAYDIUM_PROGRAM_ID = new PublicKey('CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C');
 const createPoolFeeReveiver = new PublicKey('DNXgeM9EiiaAbaWvwjHj9fQQLAX5ZsfHyvmYUNRAdNC8');
 
-describe("meme_launchpad", () => {
+describe.only("meme_launchpad", () => {
   // Configure the client to use the local cluster.
   const provider = anchor.AnchorProvider.env()
   anchor.setProvider(provider);
@@ -47,6 +49,7 @@ describe("meme_launchpad", () => {
   const paymentToken = new anchor.web3.Keypair();
   const free_account = new anchor.web3.Keypair();
   const user = new anchor.web3.Keypair();
+  const user2 = new anchor.web3.Keypair();
   const mint = anchor.web3.Keypair.generate();
 
   before(async () => {
@@ -85,8 +88,9 @@ describe("meme_launchpad", () => {
       uri: "test/uri",
     }
 
-    const start = Date.now() / 1000;
-    const end = start + 5 * Day;
+    const start = (Date.now() / 1000);
+    const end = start + 10;
+    const delay = end + 10;
     const sale_params = {
       common: {
         name: "Sale#1",
@@ -95,7 +99,7 @@ describe("meme_launchpad", () => {
         sellerLink: "Lihk",
         startTime: new BN(start),
         endTime: new BN(end),
-        closeTime: new BN(end + 1 * Day),
+        closeTime: new BN(delay),
       },
       pricing: {
         pricingModel: { fixed: {} },
@@ -176,9 +180,11 @@ describe("meme_launchpad", () => {
       .preInstructions([additionalComputeBudgetInstruction])
       .signers([wallet.payer, mint]).rpc().catch(e => console.error(e));
 
+    // console.log(await program.account.sale.fetch(sale));
+
     const saleTargetTokenAccount = await provider.connection.getTokenAccountBalance(saleTarget);
     const freeTargetTokenAccount = await provider.connection.getTokenAccountBalance(user_traget_ATA);
-
+  
     expect(saleTargetTokenAccount.value.amount).to.be.eq(sale_params.saleAmount.add(sale_params.liqAmount).toString());
     expect(freeTargetTokenAccount.value.amount).to.be.eq(new BN(588).mul(new BN(10).pow(new BN(token_params.decimals))).toString());
   })
@@ -238,7 +244,7 @@ describe("meme_launchpad", () => {
     }).signers([user]).rpc().catch(e => console.error(e));
 
     const userTokenAccount = await provider.connection.getTokenAccountBalance(purshaseAddresses.userTargetTokenAccount);
-    console.log("userTokenAccount", userTokenAccount);
+    // console.log("userTokenAccount", userTokenAccount);
   });
 
   it.skip('sale timerange test', async () => {
@@ -350,6 +356,7 @@ describe("meme_launchpad", () => {
   })
 
   it('close sale', async () => {
+    await new Promise((resolve) => setTimeout(resolve, 40000));
     const sale = anchor.web3.PublicKey.findProgramAddressSync(
       [
         Buffer.from("sale"),
@@ -363,8 +370,8 @@ describe("meme_launchpad", () => {
       RAYDIUM_PROGRAM_ID
     )[0];
 
-    console.log("AMM: " + amm_config.toBase58())
-    console.log(await provider.connection.getAccountInfo(amm_config))
+    // console.log("AMM: " + amm_config.toBase58())
+    // console.log(await provider.connection.getAccountInfo(amm_config))
 
     const raydiumAuthority = PublicKey.findProgramAddressSync(
       [Buffer.from('vault_and_lp_mint_auth_seed')],
@@ -404,11 +411,18 @@ describe("meme_launchpad", () => {
       TOKEN_2022_PROGRAM_ID
     );
 
+    // const creator_lp_token = getAssociatedTokenAddressSync(
+    //   lpMint,
+    //   sale,
+    //   true,
+    //   TOKEN_2022_PROGRAM_ID
+    // );
+
     const creator_lp_token = getAssociatedTokenAddressSync(
       lpMint,
-      sale,
+      wallet.publicKey,
       true,
-      TOKEN_2022_PROGRAM_ID
+      TOKEN_PROGRAM_ID
     );
 
     const targetTokenVault = PublicKey.findProgramAddressSync(
@@ -444,6 +458,70 @@ describe("meme_launchpad", () => {
       program.programId
     )[0];
 
+    // console.log(await provider.connection.getTokenAccountBalance(saleTargetTokenAccount))
+    // console.log(await provider.connection.getTokenAccountBalance(salePaymentTokenAccount))
+    // console.log(
+    //   {
+    //     signer: wallet.publicKey,
+    //     ammConfig: amm_config,
+    //     raydiumAuthority: raydiumAuthority,
+    //     poolState: poolState,
+    //     lpMint: lpMint,
+    //     saleTargetTokenAccount: saleTargetTokenAccount,
+    //     salePaymentTokenAccount: salePaymentTokenAccount,
+    //     creatorLpToken: creator_lp_token,
+    //     targetTokenVault: targetTokenVault,
+    //     paymentTokenVault: paymentTokenVault,
+    //     createPoolFee: createPoolFeeReveiver,
+    //     observationState: observation_state,
+    //     sale: sale,
+    //     authority: authority,
+    //     targetToken: mint.publicKey,
+    //     paymentToken: paymentToken.publicKey,
+    //     targetTokenProgram: TOKEN_2022_PROGRAM_ID,
+    //     paymentTokenProgram: TOKEN_2022_PROGRAM_ID,
+    //   }
+    // )
+    // console.log(isTargetTokenLess)
+
+    const userTargetTokenAccount = getAssociatedTokenAddressSync(
+      mint.publicKey,
+      wallet.publicKey,
+      false,
+      TOKEN_2022_PROGRAM_ID
+    );
+
+    const userPaymentTokenAccount = getAssociatedTokenAddressSync(
+      paymentToken.publicKey,
+      wallet.publicKey,
+      false,
+      TOKEN_2022_PROGRAM_ID
+    );
+    // console.log('1: ' + userTargetTokenAccount.toBase58());
+
+    const ataTransaction = await createATA(
+      wallet.publicKey,
+      [
+        {
+          user: wallet.publicKey,
+          mint: mint.publicKey,
+        }
+      ],
+    )
+    console.log(ataTransaction)
+    await provider.sendAndConfirm(ataTransaction, [wallet.payer])
+
+    console.log(await provider.connection.getTokenAccountBalance(userTargetTokenAccount))
+    
+    const user1TokenAccount = getAssociatedTokenAddressSync(
+      mint.publicKey,
+      user.publicKey,
+      false,
+      TOKEN_2022_PROGRAM_ID
+    );
+
+    console.log(await provider.connection.getTokenAccountBalance(user1TokenAccount))
+
     const tx = await program.methods.closeSale().accounts({
       signer: wallet.publicKey,
       ammConfig: amm_config,
@@ -452,7 +530,9 @@ describe("meme_launchpad", () => {
       lpMint: lpMint,
       saleTargetTokenAccount: saleTargetTokenAccount,
       salePaymentTokenAccount: salePaymentTokenAccount,
-      creatorLpToken: creator_lp_token,
+      userTargetTokenAccount: userTargetTokenAccount,
+      userPaymentTokenAccount: userPaymentTokenAccount,
+      userLpToken: creator_lp_token,
       targetTokenVault: targetTokenVault,
       paymentTokenVault: paymentTokenVault,
       createPoolFee: createPoolFeeReveiver,
@@ -463,10 +543,60 @@ describe("meme_launchpad", () => {
       paymentToken: paymentToken.publicKey,
       targetTokenProgram: TOKEN_2022_PROGRAM_ID,
       paymentTokenProgram: TOKEN_2022_PROGRAM_ID,
+      tokenProgram: TOKEN_PROGRAM_ID,
       cpSwapProgram: RAYDIUM_PROGRAM_ID,
       associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
       systemProgram: anchor.web3.SystemProgram.programId,
       rent: anchor.web3.SYSVAR_RENT_PUBKEY,
     }).signers([wallet.payer]).rpc().catch(e => console.error(e));
+
+    console.log('here')
+
+    const user2TokenAccount = getAssociatedTokenAddressSync(
+      mint.publicKey,
+      user2.publicKey,
+      false,
+      TOKEN_2022_PROGRAM_ID
+    );
+
+    const ataTransaction2 = await createATA(
+      wallet.publicKey,
+      [
+        {
+          user: user2.publicKey,
+          mint: mint.publicKey,
+        }
+      ],
+    );
+
+    await provider.sendAndConfirm(ataTransaction2, [wallet.payer])
+
+    console.log('here2')
+    // await transferChecked(
+    //   provider.connection,
+    //   user,
+    //   user1TokenAccount,
+    //   mint.publicKey,
+    //   user2TokenAccount,
+    //   user,
+    //   506,
+    //   8,
+    //   [],
+    //   {},
+    //   TOKEN_2022_PROGRAM_ID
+    // )
+
+    const transferInstruction = createTransferInstruction(
+      user1TokenAccount,
+      user2TokenAccount,
+      user.publicKey,
+      506,
+      [],
+      TOKEN_2022_PROGRAM_ID
+    );
+
+    await provider.sendAndConfirm(new Transaction().add(transferInstruction), [user]);
+    console.log(await provider.connection.getTokenAccountBalance(user1TokenAccount))
+    console.log(await provider.connection.getTokenAccountBalance(user2TokenAccount))
   })
 });
