@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 use anchor_spl::{associated_token::AssociatedToken, token_interface::{
-    freeze_account, thaw_account, transfer_checked, FreezeAccount, Mint, ThawAccount, TokenAccount, TokenInterface, TransferChecked
+    approve, freeze_account, thaw_account, transfer_checked, Approve, FreezeAccount, Mint, ThawAccount, TokenAccount, TokenInterface, TransferChecked
 }};
 
 use vesting::{
@@ -140,34 +140,7 @@ pub fn buy_token(ctx: Context<BuyToken>, params: BuyTokenParams) -> Result<()> {
         &[ctx.bumps.sale]
     ]];
 
-    let vesting_params = VestingParams {
-        start_date: curtime as u32,
-        duration: sale.vesting.duration,
-        amount: half_amount_out,
-        vesting_type: sale.vesting.vecting_model.clone(),
-    };
-
-    let vesting_cpi_ctx = CpiContext::new_with_signer(
-        ctx.accounts.vesting_program.to_account_info(),
-               InitializeVestingAccount {
-            vesting: ctx.accounts.vesting.to_account_info(),
-            sale_token_account: ctx.accounts.sale_target_token_account.to_account_info(),
-            vesting_token_account: ctx.accounts.vesting_target_token_account.to_account_info(),
-            user: ctx.accounts.signer.to_account_info(),
-            target_token: ctx.accounts.target_token.to_account_info(),
-            signer: ctx.accounts.sale.to_account_info(),
-            system_program: ctx.accounts.system_program.to_account_info(),
-            token_program: ctx.accounts.token_program.to_account_info(),
-            rent: ctx.accounts.rent.to_account_info(),
-            associated_token_program: ctx.accounts.associated_token_program.to_account_info(),
-        },
-        seeds
-    );
-
-    create_vesting(vesting_cpi_ctx, vesting_params)?;
-
     let authority_signer: &[&[&[u8]]] = &[&[b"authority", &[ctx.bumps.authority]]];
-
 
     let thaw_cpi_context = CpiContext::new_with_signer(
         ctx.accounts.token_program.to_account_info(),
@@ -179,6 +152,46 @@ pub fn buy_token(ctx: Context<BuyToken>, params: BuyTokenParams) -> Result<()> {
         authority_signer
     );
     thaw_account(thaw_cpi_context)?;
+
+    let approve_cpi_ctx = CpiContext::new_with_signer(
+        ctx.accounts.token_program.to_account_info(),
+        Approve {
+            to: ctx.accounts.sale_target_token_account.to_account_info(),
+            authority: sale.to_account_info(),
+            delegate: ctx.accounts.vesting.to_account_info(),
+        },
+        seeds
+    );
+
+    approve(approve_cpi_ctx, half_amount_out)?;
+
+    let vesting_params = VestingParams {
+        start_date: curtime as u32,
+        duration: sale.vesting.duration,
+        amount: half_amount_out,
+        vesting_type: sale.vesting.vecting_model.clone(),
+    };
+
+    msg!("transfer target to vesting");
+    // transfer half_amount_out from sale_target_token_account vesting_target_token_account
+    let vesting_cpi_ctx = CpiContext::new_with_signer(
+        ctx.accounts.vesting_program.to_account_info(),
+               InitializeVestingAccount {
+            vesting: ctx.accounts.vesting.to_account_info(),
+            sale_token_account: ctx.accounts.sale_target_token_account.to_account_info(),
+            vesting_token_account: ctx.accounts.vesting_target_token_account.to_account_info(),
+            user: ctx.accounts.signer.to_account_info(),
+            target_token: ctx.accounts.target_token.to_account_info(),
+            signer: ctx.accounts.signer.to_account_info(),
+            system_program: ctx.accounts.system_program.to_account_info(),
+            token_program: ctx.accounts.token_program.to_account_info(),
+            rent: ctx.accounts.rent.to_account_info(),
+            associated_token_program: ctx.accounts.associated_token_program.to_account_info(),
+        },
+        seeds
+    );
+
+    create_vesting(vesting_cpi_ctx, vesting_params)?;
 
     msg!("transfer target");
     // transfer amount_out from sale_target_token_account to user_target_token_account

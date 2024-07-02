@@ -277,6 +277,7 @@ describe.only("meme_launchpad", () => {
       {},
       TOKEN_2022_PROGRAM_ID,
     )
+
     await program.methods.buyToken(
       params
     ).accounts({
