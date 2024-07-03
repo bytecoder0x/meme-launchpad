@@ -26,6 +26,14 @@ pub mod meme_launchpad {
     pub fn close_sale(ctx: Context<CloseSale>) -> Result<()> {
         return instructions::close_sale(ctx);
     }
+
+    pub fn thaw_token(ctx: Context<ThawToken>) -> Result<()> {
+        return instructions::thaw_token(ctx);
+    }
+
+    pub fn transfer_token(ctx: Context<TransferToken>, amount: u64) -> Result<()> {
+        return instructions::transfer_token(ctx, amount);
+    }
 }
 
 #[derive(Accounts)]

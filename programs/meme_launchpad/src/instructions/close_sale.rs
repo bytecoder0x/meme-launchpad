@@ -1,10 +1,9 @@
 use anchor_lang::prelude::*;
 use anchor_spl::{
-    token::Token,
+    token::{Token, TokenAccount as SplTokenAccount},
     associated_token::AssociatedToken,
-    token_interface::{self, DefaultAccountStateUpdate, Mint, TokenAccount, TokenInterface, TransferChecked, transfer_checked, thaw_account, ThawAccount},
+    token_interface::{Mint, TokenAccount, TokenInterface, TransferChecked, transfer_checked},
 };
-use spl_token_2022::state::AccountState;
 
 use crate::{
     error::MemeLaunchpadError,
@@ -83,11 +82,11 @@ pub struct CloseSale<'info> {
 
     /// CHECK: creator lp ATA token account, init by cp-swap
     #[account(mut)]
-    pub user_lp_token: UncheckedAccount<'info>,
+    pub user_lp_token: AccountInfo<'info>,
 
-    // /// CHECK: creator lp ATA token account, init by cp-swap
-    // #[account(mut)]
-    // pub sale_lp_token: UncheckedAccount<'info>,
+    /// CHECK: creator lp ATA token account, init by cp-swap
+    #[account(mut)]
+    pub sale_lp_token: UncheckedAccount<'info>,
 
     /// CHECK: target token vault, init by cp-swap
     #[account(
@@ -174,180 +173,181 @@ pub struct CloseSale<'info> {
 }
 
 pub fn close_sale(ctx: Context<CloseSale>) -> Result<()> {
-    let sale_for_ctx = ctx.accounts.sale.to_account_info();
+    // let sale_for_ctx = ctx.accounts.sale.to_account_info();
     let sale = &mut ctx.accounts.sale;
     let curtime = sale.get_time()?;
 
     let target_key = ctx.accounts.target_token.key();
     let sale_seeds: &[&[&[u8]]] = &[&["sale".as_bytes(), target_key.as_ref(), &[ctx.bumps.sale]]];
 
-    let authority_signer: &[&[&[u8]]] = &[&[b"authority", &[ctx.bumps.authority]]];
+    // let authority_signer: &[&[&[u8]]] = &[&[b"authority", &[ctx.bumps.authority]]];
 
     require!(
         sale.is_ready_to_close(curtime),
         MemeLaunchpadError::SaleNotReadyToClose
     );
 
-    token_interface::default_account_state_update(
-        CpiContext::new_with_signer(
-            ctx.accounts.target_token_program.to_account_info(),
-            DefaultAccountStateUpdate {
-                token_program_id: ctx.accounts.target_token_program.to_account_info(),
-                mint: ctx.accounts.target_token.to_account_info(),
-                freeze_authority: ctx.accounts.authority.to_account_info(),
-            },
-            authority_signer,
-        ),
-        &AccountState::Initialized,
-    )?;
+    let is_target_token_less = ctx.accounts.target_token.key() < ctx.accounts.payment_token.key();
 
-    // let is_target_token_less = ctx.accounts.target_token.key() < ctx.accounts.payment_token.key();
+    let target_token_key = ctx.accounts.target_token.key();
+    let payment_token_key = ctx.accounts.payment_token.key();
+    let amm_config_key = ctx.accounts.amm_config.key();
+    let seed = "pool".as_bytes();
 
-    // let target_token_key = ctx.accounts.target_token.key();
-    // let payment_token_key = ctx.accounts.payment_token.key();
-    // let amm_config_key = ctx.accounts.amm_config.key();
-    // let seed = "pool".as_bytes();
+    let pool_state_seeds = if is_target_token_less {
+        [
+            seed,
+            amm_config_key.as_ref(),
+            target_token_key.as_ref(),
+            payment_token_key.as_ref(),
+        ]
+    } else {
+        [
+            seed,
+            amm_config_key.as_ref(),
+            payment_token_key.as_ref(),
+            target_token_key.as_ref(),
+        ]
+    };
 
-    // let pool_state_seeds = if is_target_token_less {
-    //     [
-    //         seed,
-    //         amm_config_key.as_ref(),
-    //         target_token_key.as_ref(),
-    //         payment_token_key.as_ref(),
-    //     ]
-    // } else {
-    //     [
-    //         seed,
-    //         amm_config_key.as_ref(),
-    //         payment_token_key.as_ref(),
-    //         target_token_key.as_ref(),
-    //     ]
-    // };
+    let (expected_pool_state, pool_state_bump) =
+        Pubkey::find_program_address(&pool_state_seeds, &raydium_cp_swap::ID_CONST);
 
-    // let (expected_pool_state, pool_state_bump) =
-    //     Pubkey::find_program_address(&pool_state_seeds, &raydium_cp_swap::ID_CONST);
+    if expected_pool_state != ctx.accounts.pool_state.key() {
+        msg!("Expected: {}. Got: {}", expected_pool_state, ctx.accounts.pool_state.key());
+        return Err(MemeLaunchpadError::InvalidPoolState.into());
+    }
 
-    // if expected_pool_state != ctx.accounts.pool_state.key() {
-    //     msg!("Expected: {}. Got: {}", expected_pool_state, ctx.accounts.pool_state.key());
-    //     return Err(MemeLaunchpadError::InvalidPoolState.into());
-    // }
-
-    // let init_amount_0 = if is_target_token_less {
-    //     sale.liq_amount
-    // } else {
-    //     ctx.accounts.sale_payment_token_account.amount
-    // };
-    // let init_amount_1 = if !is_target_token_less {
-    //     sale.liq_amount
-    // } else {
-    //     ctx.accounts.sale_payment_token_account.amount
-    // };
-    // msg!("Amount 0: {}, amount 1: {}", init_amount_0, init_amount_1);
+    let init_amount_0 = if is_target_token_less {
+        sale.liq_amount
+    } else {
+        ctx.accounts.sale_payment_token_account.amount
+    };
+    let init_amount_1 = if !is_target_token_less {
+        sale.liq_amount
+    } else {
+        ctx.accounts.sale_payment_token_account.amount
+    };
+    msg!("Amount 0: {}, amount 1: {}", init_amount_0, init_amount_1);
 
 
-    // let thaw_cpi_context = CpiContext::new_with_signer(
-    //     ctx.accounts.target_token_program.to_account_info(),
-    //     ThawAccount {
-    //         account : ctx.accounts.user_target_token_account.to_account_info(),
-    //         mint : ctx.accounts.target_token.to_account_info(),
-    //         authority : ctx.accounts.authority.to_account_info()
-    //     },
-    //     authority_signer
-    // );
-    // thaw_account(thaw_cpi_context)?;
+    let target_cpi_ctx = CpiContext::new_with_signer(
+        ctx.accounts.target_token_program.to_account_info(),
+        TransferChecked {
+            mint: ctx.accounts.target_token.to_account_info(),
+            from: ctx.accounts.sale_target_token_account.to_account_info(),
+            to: ctx.accounts.user_target_token_account.to_account_info(),
+            authority: sale.to_account_info(),
+        },
+        sale_seeds
+    );
+    transfer_checked(target_cpi_ctx, sale.liq_amount, ctx.accounts.target_token.decimals)?;
 
-    // let target_cpi_ctx = CpiContext::new_with_signer(
-    //     ctx.accounts.target_token_program.to_account_info(),
+    let payment_cpi_ctx = CpiContext::new_with_signer(
+        ctx.accounts.payment_token_program.to_account_info(),
+        TransferChecked {
+            mint: ctx.accounts.payment_token.to_account_info(),
+            from: ctx.accounts.sale_payment_token_account.to_account_info(),
+            to: ctx.accounts.user_payment_token_account.to_account_info(),
+            authority: sale.to_account_info(),
+        },
+        sale_seeds
+    );
+    transfer_checked(payment_cpi_ctx, ctx.accounts.sale_payment_token_account.amount, ctx.accounts.payment_token.decimals)?;
+
+
+    // let user_lp = ctx.accounts.user_lp_token.to_account_info();
+
+    // let user_lp = ctx.accounts.user_lp_token.clone();
+    let cpi_accounts = raydium_cp_swap::cpi::accounts::Initialize {
+        creator: ctx.accounts.signer.to_account_info(),
+        amm_config: ctx.accounts.amm_config.to_account_info(),
+        authority: ctx.accounts.raydium_authority.to_account_info(),
+        pool_state: ctx.accounts.pool_state.to_account_info(),
+        token_0_mint: if is_target_token_less {
+            ctx.accounts.target_token.to_account_info()
+        } else {
+            ctx.accounts.payment_token.to_account_info()
+        },
+        token_1_mint: if !is_target_token_less {
+            ctx.accounts.target_token.to_account_info()
+        } else {
+            ctx.accounts.payment_token.to_account_info()
+        },
+        lp_mint: ctx.accounts.lp_mint.to_account_info(),
+        creator_token_0: if is_target_token_less {
+            ctx.accounts.user_target_token_account.to_account_info()
+        } else {
+            ctx.accounts.user_payment_token_account.to_account_info()
+        },
+        creator_token_1: if !is_target_token_less {
+            ctx.accounts.user_target_token_account.to_account_info()
+        } else {
+            ctx.accounts.user_payment_token_account.to_account_info()
+        },
+        creator_lp_token: ctx.accounts.user_lp_token.to_account_info(),
+        token_0_vault: if is_target_token_less {
+            ctx.accounts.target_token_vault.to_account_info()
+        } else {
+            ctx.accounts.payment_token_vault.to_account_info()
+        },
+        token_1_vault: if !is_target_token_less {
+            ctx.accounts.target_token_vault.to_account_info()
+        } else {
+            ctx.accounts.payment_token_vault.to_account_info()
+        },
+        create_pool_fee: ctx.accounts.create_pool_fee.to_account_info(),
+        observation_state: ctx.accounts.observation_state.to_account_info(),
+        token_program: ctx.accounts.token_program.to_account_info(),
+        token_0_program: if is_target_token_less {
+            ctx.accounts.target_token_program.to_account_info()
+        } else {
+            ctx.accounts.payment_token_program.to_account_info()
+        },
+        token_1_program: if !is_target_token_less {
+            ctx.accounts.target_token_program.to_account_info()
+        } else {
+            ctx.accounts.payment_token_program.to_account_info()
+        },
+        associated_token_program: ctx.accounts.associated_token_program.to_account_info(),
+        system_program: ctx.accounts.system_program.to_account_info(),
+        rent: ctx.accounts.rent.to_account_info(),
+    };
+
+    let cpi_context = CpiContext::new(
+        ctx.accounts.cp_swap_program.to_account_info(),
+        cpi_accounts,
+        // sale_seeds,
+    );
+    
+    raydium_cp_swap::cpi::initialize(
+        cpi_context,
+        init_amount_0,
+        init_amount_1,
+        sale.common.close_time as u64,
+    );
+
+    // user_lp.lo
+    // let 
+    // let user_lp = *ctx.accounts.user_lp_token.;
+
+    // let mut buf = &user_lp.try_borrow_mut_data()?[..];
+    // let user_lp_token_info =  SplTokenAccount::try_deserialize(*user_lp)?;
+    // let a = ctx.accounts.user_lp_token.clone().data.try_borrow().unwrap();
+  
+
+    // let transfer_cpi_ctx = CpiContext::new(
+    //     ctx.accounts.token_program.to_account_info(),
     //     TransferChecked {
-    //         mint: ctx.accounts.target_token.to_account_info(),
-    //         from: ctx.accounts.sale_target_token_account.to_account_info(),
-    //         to: ctx.accounts.user_target_token_account.to_account_info(),
-    //         authority: sale.to_account_info(),
+    //         mint: ctx.accounts.lp_mint.to_account_info(),
+    //         from: ctx.accounts.user_lp_token.to_account_info(),
+    //         to: ctx.accounts.sale_lp_token.to_account_info(),
+    //         authority: ctx.accounts.signer.to_account_info(),
     //     },
-    //     sale_seeds
     // );
-    // transfer_checked(target_cpi_ctx, sale.liq_amount, ctx.accounts.target_token.decimals)?;
-
-
-    // let payment_cpi_ctx = CpiContext::new_with_signer(
-    //     ctx.accounts.payment_token_program.to_account_info(),
-    //     TransferChecked {
-    //         mint: ctx.accounts.payment_token.to_account_info(),
-    //         from: ctx.accounts.sale_payment_token_account.to_account_info(),
-    //         to: ctx.accounts.user_payment_token_account.to_account_info(),
-    //         authority: sale.to_account_info(),
-    //     },
-    //     sale_seeds
-    // );
-    // transfer_checked(payment_cpi_ctx, ctx.accounts.sale_payment_token_account.amount, ctx.accounts.payment_token.decimals)?;
-
-
-    // let cpi_accounts = raydium_cp_swap::cpi::accounts::Initialize {
-    //     creator: ctx.accounts.signer.to_account_info(),
-    //     amm_config: ctx.accounts.amm_config.to_account_info(),
-    //     authority: ctx.accounts.raydium_authority.to_account_info(),
-    //     pool_state: ctx.accounts.pool_state.to_account_info(),
-    //     token_0_mint: if is_target_token_less {
-    //         ctx.accounts.target_token.to_account_info()
-    //     } else {
-    //         ctx.accounts.payment_token.to_account_info()
-    //     },
-    //     token_1_mint: if !is_target_token_less {
-    //         ctx.accounts.target_token.to_account_info()
-    //     } else {
-    //         ctx.accounts.payment_token.to_account_info()
-    //     },
-    //     lp_mint: ctx.accounts.lp_mint.to_account_info(),
-    //     creator_token_0: if is_target_token_less {
-    //         ctx.accounts.user_target_token_account.to_account_info()
-    //     } else {
-    //         ctx.accounts.user_payment_token_account.to_account_info()
-    //     },
-    //     creator_token_1: if !is_target_token_less {
-    //         ctx.accounts.user_target_token_account.to_account_info()
-    //     } else {
-    //         ctx.accounts.user_payment_token_account.to_account_info()
-    //     },
-    //     creator_lp_token: ctx.accounts.user_lp_token.to_account_info(),
-    //     token_0_vault: if is_target_token_less {
-    //         ctx.accounts.target_token_vault.to_account_info()
-    //     } else {
-    //         ctx.accounts.payment_token_vault.to_account_info()
-    //     },
-    //     token_1_vault: if !is_target_token_less {
-    //         ctx.accounts.target_token_vault.to_account_info()
-    //     } else {
-    //         ctx.accounts.payment_token_vault.to_account_info()
-    //     },
-    //     create_pool_fee: ctx.accounts.create_pool_fee.to_account_info(),
-    //     observation_state: ctx.accounts.observation_state.to_account_info(),
-    //     token_program: ctx.accounts.token_program.to_account_info(),
-    //     token_0_program: if is_target_token_less {
-    //         ctx.accounts.target_token_program.to_account_info()
-    //     } else {
-    //         ctx.accounts.payment_token_program.to_account_info()
-    //     },
-    //     token_1_program: if !is_target_token_less {
-    //         ctx.accounts.target_token_program.to_account_info()
-    //     } else {
-    //         ctx.accounts.payment_token_program.to_account_info()
-    //     },
-    //     associated_token_program: ctx.accounts.associated_token_program.to_account_info(),
-    //     system_program: ctx.accounts.system_program.to_account_info(),
-    //     rent: ctx.accounts.rent.to_account_info(),
-    // };
-
-    // let cpi_context = CpiContext::new(
-    //     ctx.accounts.cp_swap_program.to_account_info(),
-    //     cpi_accounts,
-    //     // sale_seeds,
-    // );
-    // raydium_cp_swap::cpi::initialize(
-    //     cpi_context,
-    //     init_amount_0,
-    //     init_amount_1,
-    //     sale.common.close_time as u64,
-    // );
+    // let r = Account::<SplTokenAccount>::try_from(&ctx.accounts.user_lp_token.to_account_info()).unwrap();
+    // msg!("Lp amount: {}", r.amount);
+    // transfer_checked(transfer_cpi_ctx, r.amount, 9)?;
 
     Ok(())
 }

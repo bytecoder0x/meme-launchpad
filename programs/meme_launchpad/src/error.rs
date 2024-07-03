@@ -89,5 +89,9 @@ pub enum MemeLaunchpadError {
     #[msg("Sale is not ready to close")]
     SaleNotReadyToClose,
     #[msg("Invalid pool state")]
-    InvalidPoolState
+    InvalidPoolState,
+    #[msg("Amount out is below the minimum cap")]
+    BelowMinCap,
+    #[msg("Amount out is above the maximum cap")]
+    AboveMaxCap,
 }

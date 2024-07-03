@@ -63,10 +63,7 @@ pub struct CreateTokenAndSale<'info> {
 
 #[derive(AnchorSerialize, AnchorDeserialize)]
 pub struct CreateTokenAndSaleParams {
-
-    pub free_account: Pubkey,
     pub free_amount: u64,
-
     pub create_token_params: CreateTokenParams,
     pub create_sale_params: CreateSaleParams,
 }
@@ -90,10 +87,9 @@ pub fn create_token_and_sale(
         ctx.accounts.rent.to_account_info(), 
         params.create_token_params
     );
-    // let a = ;
+
     let _ =_create_sale(
         &mut ctx.accounts.sale,
-        // &ctx.accounts.sale.to_account_info(), 
         ctx.accounts.signer.to_account_info(), 
         ctx.accounts.target_token.to_account_info(),
         target_ata.clone(),
@@ -104,10 +100,11 @@ pub fn create_token_and_sale(
         ctx.accounts.system_program.to_account_info(),
         ctx.accounts.token_program.to_account_info(),
         params.create_sale_params,
+        ctx.accounts.free_account.key()
     );
-    // let amount = params.create_sale_params.amount;
-
+    
     msg!("Creating payment associated token account");
+    
     // Create the associated token account
     let _ = associated_token::create(CpiContext::new(
         ctx.accounts.associated_token_program.to_account_info(),
@@ -122,29 +119,41 @@ pub fn create_token_and_sale(
     ));
    
 
-    let token_accounts = [
-        target_ata.clone(),
-        ctx.accounts.free_token_account.clone()
-    ];
-
-    let amounts = [
-        amount_for_sale,
-        params.free_amount
-    ];
-
-    let msgs = [
-        "Sale and Liquidity tokens".to_string(),
-        "Free tokens".to_string()
-    ];
-
-    let _ = _mint_token_and_froze(
+    // Mint tokens for sale 
+    _mint_token(
         ctx.accounts.token_program.to_account_info(),
         mint.clone(),
-        &token_accounts,
+        target_ata.clone(),
         ctx.accounts.authority.to_account_info(),
         ctx.bumps.authority,
-        &amounts,
-        &msgs
-    );
+        &amount_for_sale
+    )?;
+
+    // Mint tokens for free account
+    _mint_token(
+        ctx.accounts.token_program.to_account_info(),
+        mint.clone(),
+        ctx.accounts.free_token_account.clone(),
+        ctx.accounts.authority.to_account_info(),
+        ctx.bumps.authority,
+        &params.free_amount
+    )?;
+
+    // Freeze mint
+    _freeze_mint(
+        ctx.accounts.token_program.to_account_info(),
+        mint.clone(),
+        ctx.accounts.authority.to_account_info(),
+        ctx.bumps.authority
+    )?;
+
+    _freeze_account(
+        ctx.accounts.free_token_account.to_account_info(),
+        ctx.accounts.token_program.to_account_info(),
+        mint.clone(),
+        ctx.accounts.authority.to_account_info(),
+        ctx.bumps.authority
+    )?;
+
     Ok(())
 }

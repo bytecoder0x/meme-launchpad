@@ -85,17 +85,22 @@ pub struct Sale {
     pub common: CommonParams,
 
     pub pricing: PricingParams,
-    pub stats: SaleStats,
     pub vesting: VestingParams,
 
     pub token: Pubkey,
     pub payment_token: Pubkey,
 
     pub sale_amount: u64,
-    pub already_sold: u64,
     pub liq_amount: u64,
 
+    pub min_cap: u64,
+    pub max_cap: u64,
+    pub free_wallet: Pubkey,
+    pub already_sold: u64,
+    
     pub creation_time: i64,
+
+    pub stats: SaleStats,
     pub bump: u8,
 }
 
@@ -188,6 +193,8 @@ pub struct CreateSaleParams {
     pub pricing: PricingParams,
     pub sale_amount: u64,
     pub liq_amount: u64,
+    pub min_cap: u64,
+    pub max_cap: u64,
 }
 
 pub fn _create_sale<'info>(
@@ -203,6 +210,7 @@ pub fn _create_sale<'info>(
     system_program: AccountInfo<'info>,
     token_program: AccountInfo<'info>,
     params: CreateSaleParams,
+    free_wallet: Pubkey,
 ) -> Result<()> {
     msg!("Creating Sale Account");
 
@@ -247,6 +255,9 @@ pub fn _create_sale<'info>(
     sale.stats = SaleStats::default();
     sale.common = params.common;
     sale.pricing = params.pricing;
+    sale.min_cap = params.min_cap;
+    sale.max_cap = params.max_cap;
+    sale.free_wallet = free_wallet;
     sale.creation_time = sale.get_time()?;
     sale.bump = sale_bump;
 

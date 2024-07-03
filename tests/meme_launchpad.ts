@@ -25,6 +25,9 @@ import { expect } from "chai";
 import { getCreateSaleAddresses, getPurshaseAddresses } from "./helpers/sale";
 import { createATA } from "./helpers/token";
 import { expectFail } from "./helpers/test";
+
+import raydium_idl from "../idls/raydium_cp_swap.json";
+import { RaydiumCpSwap } from "../idls/raydium_types";
 // const Day = 24 * 60 * 60 * 1000;
 // seconds in day
 const Day = 24 * 60 * 60;
@@ -45,6 +48,8 @@ describe.only("meme_launchpad", () => {
   anchor.setProvider(provider);
 
   const program = anchor.workspace.MemeLaunchpad as Program<MemeLaunchpad>;
+  const cp_swap_program = new anchor.Program(raydium_idl, provider) as Program<RaydiumCpSwap>;
+
   const wallet = provider.wallet as anchor.Wallet;
   const paymentToken = new anchor.web3.Keypair();
   const free_account = new anchor.web3.Keypair();
@@ -108,6 +113,8 @@ describe.only("meme_launchpad", () => {
       },
       saleAmount: new BN(1000).mul(new BN(10).pow(new BN(token_params.decimals))),
       liqAmount: new BN(700).mul(new BN(10).pow(new BN(token_params.decimals))),
+      maxCap: new BN(1000).mul(new BN(10).pow(new BN(token_params.decimals))),
+      minCap: new BN(1).mul(new BN(10).pow(new BN(token_params.decimals))),
     }
 
     const userATA = getAssociatedTokenAddressSync(
@@ -184,7 +191,7 @@ describe.only("meme_launchpad", () => {
 
     const saleTargetTokenAccount = await provider.connection.getTokenAccountBalance(saleTarget);
     const freeTargetTokenAccount = await provider.connection.getTokenAccountBalance(user_traget_ATA);
-  
+
     expect(saleTargetTokenAccount.value.amount).to.be.eq(sale_params.saleAmount.add(sale_params.liqAmount).toString());
     expect(freeTargetTokenAccount.value.amount).to.be.eq(new BN(588).mul(new BN(10).pow(new BN(token_params.decimals))).toString());
   })
@@ -425,6 +432,13 @@ describe.only("meme_launchpad", () => {
       TOKEN_PROGRAM_ID
     );
 
+    const sale_lp_token = getAssociatedTokenAddressSync(
+      lpMint,
+      sale,
+      true,
+      TOKEN_PROGRAM_ID
+    );
+
     const targetTokenVault = PublicKey.findProgramAddressSync(
       [
         Buffer.from("pool_vault"),
@@ -497,7 +511,6 @@ describe.only("meme_launchpad", () => {
       false,
       TOKEN_2022_PROGRAM_ID
     );
-    // console.log('1: ' + userTargetTokenAccount.toBase58());
 
     const ataTransaction = await createATA(
       wallet.publicKey,
@@ -508,11 +521,8 @@ describe.only("meme_launchpad", () => {
         }
       ],
     )
-    console.log(ataTransaction)
     await provider.sendAndConfirm(ataTransaction, [wallet.payer])
 
-    console.log(await provider.connection.getTokenAccountBalance(userTargetTokenAccount))
-    
     const user1TokenAccount = getAssociatedTokenAddressSync(
       mint.publicKey,
       user.publicKey,
@@ -520,7 +530,9 @@ describe.only("meme_launchpad", () => {
       TOKEN_2022_PROGRAM_ID
     );
 
-    console.log(await provider.connection.getTokenAccountBalance(user1TokenAccount))
+    const additionalComputeBudgetInstruction = ComputeBudgetProgram.setComputeUnitLimit({
+      units: 600000,
+    });
 
     const tx = await program.methods.closeSale().accounts({
       signer: wallet.publicKey,
@@ -533,6 +545,7 @@ describe.only("meme_launchpad", () => {
       userTargetTokenAccount: userTargetTokenAccount,
       userPaymentTokenAccount: userPaymentTokenAccount,
       userLpToken: creator_lp_token,
+      saleLpToken: sale_lp_token,
       targetTokenVault: targetTokenVault,
       paymentTokenVault: paymentTokenVault,
       createPoolFee: createPoolFeeReveiver,
@@ -548,55 +561,122 @@ describe.only("meme_launchpad", () => {
       associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
       systemProgram: anchor.web3.SystemProgram.programId,
       rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-    }).signers([wallet.payer]).rpc().catch(e => console.error(e));
+    }).preInstructions([additionalComputeBudgetInstruction]).signers([wallet.payer]).rpc().catch(e => console.error(e));
+  })
 
-    console.log('here')
+  it("thaw account", async () => {
 
-    const user2TokenAccount = getAssociatedTokenAddressSync(
+    const sale = anchor.web3.PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("sale"),
+        mint.publicKey.toBuffer(),
+      ],
+      program.programId
+    )[0];
+
+    const authority = anchor.web3.PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("authority")
+      ],
+      program.programId
+    )[0];
+
+    const userAccount = getAssociatedTokenAddressSync(
       mint.publicKey,
-      user2.publicKey,
+      user.publicKey,
       false,
       TOKEN_2022_PROGRAM_ID
     );
 
-    const ataTransaction2 = await createATA(
-      wallet.publicKey,
+    await program.methods.thawToken().accounts({
+      signer: user.publicKey,
+      sale: sale,
+      authority: authority,
+      userTargetTokenAccount: userAccount, 
+      targetToken: mint.publicKey,
+      tokenProgram: TOKEN_2022_PROGRAM_ID,
+    }).signers([user]).rpc().catch(e => console.error(e));
+  
+  })
+
+  it("swap after sale", async () => {
+
+    const raydiumAuthority = PublicKey.findProgramAddressSync(
+      [Buffer.from('vault_and_lp_mint_auth_seed')],
+      RAYDIUM_PROGRAM_ID
+    )[0];
+
+    const amm_config = PublicKey.findProgramAddressSync(
+      [Buffer.from('amm_config'), u16ToBytes(0)],
+      RAYDIUM_PROGRAM_ID
+    )[0];
+
+    const isTargetTokenLess = mint.publicKey < paymentToken.publicKey;
+    const poolState = PublicKey.findProgramAddressSync(
       [
-        {
-          user: user2.publicKey,
-          mint: mint.publicKey,
-        }
+        Buffer.from('pool'),
+        amm_config.toBytes(),
+        ...(isTargetTokenLess ? [mint.publicKey.toBytes(), paymentToken.publicKey.toBytes()] : [paymentToken.publicKey.toBytes(), mint.publicKey.toBytes()]),
       ],
-    );
+      RAYDIUM_PROGRAM_ID
+    )[0];
 
-    await provider.sendAndConfirm(ataTransaction2, [wallet.payer])
-
-    console.log('here2')
-    // await transferChecked(
-    //   provider.connection,
-    //   user,
-    //   user1TokenAccount,
-    //   mint.publicKey,
-    //   user2TokenAccount,
-    //   user,
-    //   506,
-    //   8,
-    //   [],
-    //   {},
-    //   TOKEN_2022_PROGRAM_ID
-    // )
-
-    const transferInstruction = createTransferInstruction(
-      user1TokenAccount,
-      user2TokenAccount,
+    const userTargetTokenAccount = getAssociatedTokenAddressSync(
+      mint.publicKey,
       user.publicKey,
-      506,
-      [],
+      false,
       TOKEN_2022_PROGRAM_ID
     );
 
-    await provider.sendAndConfirm(new Transaction().add(transferInstruction), [user]);
-    console.log(await provider.connection.getTokenAccountBalance(user1TokenAccount))
-    console.log(await provider.connection.getTokenAccountBalance(user2TokenAccount))
-  })
+    const userPaymentTokenAccount = getAssociatedTokenAddressSync(
+      paymentToken.publicKey,
+      user.publicKey,
+      false,
+      TOKEN_2022_PROGRAM_ID
+    );
+    const targetTokenVault = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("pool_vault"),
+        poolState.toBytes(),
+        mint.publicKey.toBytes(),
+      ],
+      RAYDIUM_PROGRAM_ID
+    )[0];
+
+    const paymentTokenVault = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("pool_vault"),
+        poolState.toBytes(),
+        paymentToken.publicKey.toBytes(),
+      ],
+      RAYDIUM_PROGRAM_ID
+    )[0];
+
+    const observation_state = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("observation"),
+        poolState.toBytes(),
+      ],
+      RAYDIUM_PROGRAM_ID
+    )[0];
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    
+    const tx = await cp_swap_program.methods.swapBaseInput(
+      new BN(100000000), new BN(3000000)
+    ).accounts({
+      payer: user.publicKey,
+      authority: raydiumAuthority,
+      ammConfig: amm_config,
+      poolState: poolState,
+      inputTokenAccount: userTargetTokenAccount,
+      outputTokenAccount: userPaymentTokenAccount,
+      inputVault: targetTokenVault,
+      outputVault: paymentTokenVault,
+      inputTokenProgram: TOKEN_2022_PROGRAM_ID,
+      outputTokenProgram: TOKEN_2022_PROGRAM_ID,
+      inputTokenMint: mint.publicKey,
+      outputTokenMint: paymentToken.publicKey,
+      observationState: observation_state,
+    }).signers([user]).rpc().catch(e => console.error(e));
+})
 });

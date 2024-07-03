@@ -1,15 +1,20 @@
-use anchor_lang::{prelude::*, system_program, solana_program::program::{invoke, invoke_signed}};
+use anchor_lang::{
+    prelude::*,
+    solana_program::program::{invoke, invoke_signed},
+    system_program,
+};
 use anchor_spl::{
     token_2022,
     token_interface::{
-        default_account_state,
-        spl_token_2022::instruction::AuthorityType,
-        Token2022, 
-        ThawAccount,
-        thaw_account
-    }
+        freeze_account, FreezeAccount,
+        default_account_state, spl_token_2022::instruction::AuthorityType, thaw_account,
+        ThawAccount, Token2022,
+    },
 };
-use spl_token_2022::{extension::ExtensionType, state::{AccountState, Mint}};
+use spl_token_2022::{
+    extension::ExtensionType,
+    state::{AccountState, Mint},
+};
 
 #[account]
 pub struct TokenAuthority {}
@@ -34,7 +39,7 @@ pub fn _create_token<'a>(
     params: CreateTokenParams,
 ) -> Result<()> {
     // calculate the space need for the mint account with the desired extensions
-    let space = ExtensionType::try_calculate_account_len::<Mint>(&[ExtensionType::MetadataPointer, ExtensionType::DefaultAccountState])
+    let space = ExtensionType::try_calculate_account_len::<Mint>(&[ExtensionType::MetadataPointer])
         .unwrap();
 
     let meta_data_space = 250;
@@ -86,18 +91,17 @@ pub fn _create_token<'a>(
         &[mint.to_account_info(), authority.to_account_info()],
     )?;
 
+    // let default_account_state_ix =
+    // spl_token_2022::extension::default_account_state::instruction::initialize_default_account_state(
+    //     &Token2022::id(),
+    //      &mint.key(),
+    //     &AccountState::Frozen
+    // ).unwrap();
 
-    let default_account_state_ix = 
-    spl_token_2022::extension::default_account_state::instruction::initialize_default_account_state(
-        &Token2022::id(),
-         &mint.key(),
-        &AccountState::Frozen
-    ).unwrap();
-
-    invoke(
-        &default_account_state_ix,
-        &[mint.to_account_info()],
-    )?;
+    // invoke(
+    //     &default_account_state_ix,
+    //     &[mint.to_account_info()],
+    // )?;
 
     // Initialize the mint cpi
     let mint_cpi_ix = CpiContext::new(
@@ -107,9 +111,13 @@ pub fn _create_token<'a>(
         },
     );
 
-    token_2022::initialize_mint2(mint_cpi_ix, params.decimals, &authority.key(), Some(&authority.key())).unwrap();
-
-
+    token_2022::initialize_mint2(
+        mint_cpi_ix,
+        params.decimals,
+        &authority.key(),
+        Some(&authority.key()),
+    )
+    .unwrap();
 
     // We use a PDA as a mint authority for the metadata account because
     // we want to be able to update the NFT from the program.
@@ -138,53 +146,42 @@ pub fn _create_token<'a>(
         ],
         signer,
     )?;
-    
 
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn _mint_token_and_froze<'a>(
+pub fn _mint_token<'a>(
     token_program: AccountInfo<'a>,
     mint: AccountInfo<'a>,
-    token_accounts: &[AccountInfo<'a>],
+    token_account: AccountInfo<'a>,
     authority: AccountInfo<'a>,
     authotity_bump: u8,
-    amounts: &[u64],
-    mint_msgs: &[String],
+    amount: &u64,
 ) -> Result<()> {
-    let seeds = b"authority";
-    let signer: &[&[&[u8]]] = &[&[seeds, &[authotity_bump]]];
-
-    for ((token_account, amount), msg) in token_accounts.iter().zip(amounts).zip(mint_msgs) {
-        
-
-        let cpi_context = CpiContext::new_with_signer(
+    let signer: &[&[&[u8]]] = &[&[b"authority", &[authotity_bump]]];
+    token_2022::mint_to(
+        CpiContext::new_with_signer(
             token_program.to_account_info(),
-            ThawAccount {
-                account : token_account.to_account_info(),
-                mint : mint.to_account_info(),
-                authority : authority.to_account_info()
+            token_2022::MintTo {
+                mint: mint.to_account_info(),
+                to: token_account.to_account_info(),
+                authority: authority.to_account_info(),
             },
-            signer
-        );
-        thaw_account(cpi_context)?;
+            signer,
+        ),
+        *amount,
+    )?;
 
-        msg!("Meme Launchpad: {} mint", msg); 
-        token_2022::mint_to(
-            CpiContext::new_with_signer(
-                token_program.to_account_info(),
-                token_2022::MintTo {
-                    mint: mint.to_account_info(),
-                    to: token_account.to_account_info(),
-                    authority: authority.to_account_info(),
-                },
-                signer,
-            ),
-            *amount,
-        )?;
-    }   
+    Ok(())
+}
 
+pub fn _freeze_mint<'a>(
+    token_program: AccountInfo<'a>,
+    mint: AccountInfo<'a>,
+    authority: AccountInfo<'a>,
+    authotity_bump: u8,
+) -> Result<()> {
+    let signer: &[&[&[u8]]] = &[&[b"authority", &[authotity_bump]]];
     // Freeze the mint authority so no more tokens can be minted to make it an NFT
     token_2022::set_authority(
         CpiContext::new_with_signer(
@@ -198,6 +195,29 @@ pub fn _mint_token_and_froze<'a>(
         AuthorityType::MintTokens,
         None,
     )?;
+
+    Ok(())
+}
+
+pub fn _freeze_account<'a>(
+    account: AccountInfo<'a>,
+    token_program: AccountInfo<'a>,
+    mint: AccountInfo<'a>,
+    authority: AccountInfo<'a>,
+    authotity_bump: u8,
+) -> Result<()> {
+    let authority_signer: &[&[&[u8]]] = &[&[b"authority", &[authotity_bump]]];
+    
+    let cpi = CpiContext::new_with_signer(
+        token_program.to_account_info(),
+        FreezeAccount {
+            account : account.to_account_info(),
+            mint : mint.to_account_info(),
+            authority : authority.to_account_info()
+        },
+        authority_signer
+    );
+    freeze_account(cpi)?;
 
     Ok(())
 }

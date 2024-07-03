@@ -1,14 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{
-    transfer_checked,
-    Mint,
-    TokenAccount,
-    TokenInterface,
-    TransferChecked,
-    ThawAccount,
-    thaw_account,
-    freeze_account,
-    FreezeAccount,
+    freeze_account, thaw_account, transfer_checked, FreezeAccount, Mint, ThawAccount, TokenAccount,
+    TokenInterface, TransferChecked,
 };
 
 use crate::{
@@ -86,13 +79,11 @@ pub fn buy_token(ctx: Context<BuyToken>, params: BuyTokenParams) -> Result<()> {
     let curtime = sale.get_time()?;
 
     require!(sale.is_started(curtime), MemeLaunchpadError::SaleNotStarted);
-
     require!(!sale.is_ended(curtime), MemeLaunchpadError::SaleEnded);
 
     let price = sale.get_sale_price(params.amount, curtime)?;
     let amount_in;
     let amount_out;
-    // let total_price = price * amount;
 
     if params.amount_specified_input {
         amount_in = params.amount;
@@ -100,6 +91,14 @@ pub fn buy_token(ctx: Context<BuyToken>, params: BuyTokenParams) -> Result<()> {
     } else {
         amount_out = params.amount;
         amount_in = amount_out * price;
+    }
+
+    if amount_out < sale.min_cap {
+        return Err(MemeLaunchpadError::BelowMinCap.into());
+    }
+
+    if amount_out > sale.max_cap {
+        return Err(MemeLaunchpadError::AboveMaxCap.into());
     }
 
     if sale.already_sold + amount_out >= sale.sale_amount {
@@ -122,28 +121,25 @@ pub fn buy_token(ctx: Context<BuyToken>, params: BuyTokenParams) -> Result<()> {
 
     // todo: impelement vesting
 
-    
     let target_key = ctx.accounts.target_token.key();
     // signer seeds for sale
-    let seeds: &[&[&[u8]]] = &[&[
-        "sale".as_bytes(),
-        target_key.as_ref(),
-        &[ctx.bumps.sale]
-    ]];
+    let seeds: &[&[&[u8]]] = &[&["sale".as_bytes(), target_key.as_ref(), &[ctx.bumps.sale]]];
 
     let authority_signer: &[&[&[u8]]] = &[&[b"authority", &[ctx.bumps.authority]]];
 
-
-    let thaw_cpi_context = CpiContext::new_with_signer(
-        ctx.accounts.token_program.to_account_info(),
-        ThawAccount {
-            account : ctx.accounts.user_target_token_account.to_account_info(),
-            mint : ctx.accounts.target_token.to_account_info(),
-            authority : ctx.accounts.authority.to_account_info()
-        },
-        authority_signer
-    );
-    thaw_account(thaw_cpi_context)?;
+    if ctx.accounts.user_target_token_account.is_frozen() {
+        msg!("Temporary thawing user account");
+        let thaw_cpi_context = CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            ThawAccount {
+                account: ctx.accounts.user_target_token_account.to_account_info(),
+                mint: ctx.accounts.target_token.to_account_info(),
+                authority: ctx.accounts.authority.to_account_info(),
+            },
+            authority_signer,
+        );
+        thaw_account(thaw_cpi_context)?;
+    }
 
     msg!("transfer target");
     // transfer amount_out from sale_target_token_account to user_target_token_account
@@ -158,7 +154,6 @@ pub fn buy_token(ctx: Context<BuyToken>, params: BuyTokenParams) -> Result<()> {
         seeds,
     );
     transfer_checked(out_cpi_ctx, amount_out, ctx.accounts.target_token.decimals)?;
-
 
     let froze_cpi_context = CpiContext::new_with_signer(
         ctx.accounts.token_program.to_account_info(),
