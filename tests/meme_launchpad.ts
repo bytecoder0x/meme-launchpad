@@ -141,7 +141,8 @@ describe.only("meme_launchpad", () => {
       },
       vesting: {
         duration: 10,
-        vestingModel:{ discreate: [2] }, 
+        vestingModel: { discrete: [2] },
+        percentage: 10_00, 
       },
       saleAmount: new BN(1000).mul(new BN(10).pow(new BN(token_params.decimals))),
       liqAmount: new BN(700).mul(new BN(10).pow(new BN(token_params.decimals))),
@@ -284,6 +285,8 @@ describe.only("meme_launchpad", () => {
       ...purshaseAddresses,
       vestingProgram: anchor.workspace.Vesting.programId
     }).signers([user]).rpc().catch(e => console.error(e));
+
+    console.log(await provider.connection.getBalance(purshaseAddresses.vestingTargetTokenAccount))
 
   });
 

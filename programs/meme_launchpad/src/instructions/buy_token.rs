@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_spl::{associated_token::AssociatedToken, token_interface::{
+use anchor_spl::{associated_token::{self, AssociatedToken}, token_interface::{
     approve, freeze_account, thaw_account, transfer_checked, Approve, FreezeAccount, Mint, ThawAccount, TokenAccount, TokenInterface, TransferChecked
 }};
 
@@ -115,7 +115,8 @@ pub fn buy_token(ctx: Context<BuyToken>, params: BuyTokenParams) -> Result<()> {
         return Err(MemeLaunchpadError::SaleLimitExceeded.into());
     }
 
-    let half_amount_out = amount_out / 2;
+    let vesting_amount_out = (amount_out * sale.vesting.percentage as u64) / 100_00;
+    let user_amount_out = amount_out - vesting_amount_out;
 
     msg!("transfer paymment");
     // transfer amount_in from user_payment_token_account to sale_payment_token_account
@@ -163,17 +164,17 @@ pub fn buy_token(ctx: Context<BuyToken>, params: BuyTokenParams) -> Result<()> {
         seeds
     );
 
-    approve(approve_cpi_ctx, half_amount_out)?;
+    approve(approve_cpi_ctx, vesting_amount_out)?;
 
     let vesting_params = VestingParams {
         start_date: curtime as u32,
         duration: sale.vesting.duration,
-        amount: half_amount_out,
-        vesting_type: sale.vesting.vecting_model.clone(),
+        amount: vesting_amount_out,
+        vesting_type: sale.vesting.vesting_model.clone(),
     };
 
     msg!("transfer target to vesting");
-    // transfer half_amount_out from sale_target_token_account vesting_target_token_account
+    // transfer vesting_amount from sale_target_token_account vesting_target_token_account
     let vesting_cpi_ctx = CpiContext::new_with_signer(
         ctx.accounts.vesting_program.to_account_info(),
                InitializeVestingAccount {
@@ -194,7 +195,7 @@ pub fn buy_token(ctx: Context<BuyToken>, params: BuyTokenParams) -> Result<()> {
     create_vesting(vesting_cpi_ctx, vesting_params)?;
 
     msg!("transfer target");
-    // transfer amount_out from sale_target_token_account to user_target_token_account
+    // transfer user_amount_out from sale_target_token_account to user_target_token_account
     let out_cpi_ctx = CpiContext::new_with_signer(
         ctx.accounts.token_program.to_account_info(),
         TransferChecked {
@@ -205,7 +206,7 @@ pub fn buy_token(ctx: Context<BuyToken>, params: BuyTokenParams) -> Result<()> {
         },
         seeds,
     );
-    transfer_checked(out_cpi_ctx, half_amount_out, ctx.accounts.target_token.decimals)?;
+    transfer_checked(out_cpi_ctx, user_amount_out, ctx.accounts.target_token.decimals)?;
 
     let froze_cpi_context = CpiContext::new_with_signer(
         ctx.accounts.token_program.to_account_info(),

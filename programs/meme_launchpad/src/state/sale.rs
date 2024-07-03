@@ -76,8 +76,9 @@ pub struct PricingParams {
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct VestingParams {
-    pub vecting_model: VestingType,
+    pub vesting_model: VestingType,
     pub duration: u32,
+    pub percentage: u32,
 }
 
 #[account]
