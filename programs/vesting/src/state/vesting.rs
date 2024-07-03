@@ -5,7 +5,7 @@ use anchor_lang::prelude::*;
 pub enum VestingType {
     Simple,
     Linear,
-    Discreate(u32)
+    Discrete(u32)
 }
 
 #[account]
@@ -38,7 +38,7 @@ impl Vesting {
                     self.amount * elapsed_time / self.duration as u64
                 }
             }
-            VestingType::Discreate(frequency) => {
+            VestingType::Discrete(frequency) => {
                 if current_time <= self.start_date {
                     0
                 } else if current_time >= self.start_date + self.duration {

@@ -1,6 +1,8 @@
 use anchor_lang::{prelude::*, solana_program};
 use anchor_spl::associated_token;
 
+use vesting::state::vesting::VestingType;
+
 #[derive(Copy, Clone, PartialEq, AnchorSerialize, AnchorDeserialize, Default, Debug)]
 pub struct BidderStats {
     pub fills_volume: u64,
@@ -72,13 +74,14 @@ pub struct PricingParams {
     pub start_price: u64,
 }
 
-#[derive(Copy, Clone, PartialEq, AnchorSerialize, AnchorDeserialize, Default, Debug)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct VestingParams {
-    pub vecting_model: PricingModel,
+    pub vesting_model: VestingType,
+    pub duration: u32,
+    pub percentage: u32,
 }
 
 #[account]
-#[derive(Default, Debug)]
 pub struct Sale {
     pub owner: Pubkey,
 
@@ -191,6 +194,7 @@ impl Sale {
 pub struct CreateSaleParams {
     pub common: CommonParams,
     pub pricing: PricingParams,
+    pub vesting: VestingParams,
     pub sale_amount: u64,
     pub liq_amount: u64,
     pub min_cap: u64,
@@ -258,6 +262,7 @@ pub fn _create_sale<'info>(
     sale.min_cap = params.min_cap;
     sale.max_cap = params.max_cap;
     sale.free_wallet = free_wallet;
+    sale.vesting = params.vesting;
     sale.creation_time = sale.get_time()?;
     sale.bump = sale_bump;
 

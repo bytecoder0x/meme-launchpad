@@ -1,8 +1,11 @@
 use anchor_lang::prelude::*;
-use anchor_spl::{associated_token::{self, AssociatedToken}, token::{self, Mint, Token, TokenAccount, Transfer}};
+use anchor_spl::{
+    associated_token::{self, AssociatedToken},
+    token_interface::{TokenInterface, TokenAccount, Mint, TransferChecked, transfer_checked }
+};
 
 use crate::state::vesting::{Vesting, VestingType};
-
+/// approve, user all amount  token
 #[derive(Accounts)]
 pub struct InitializeVestingAccount<'info> {
     #[account(
@@ -17,28 +20,27 @@ pub struct InitializeVestingAccount<'info> {
         mut,
         constraint = sale_token_account.mint.key() == target_token.key()
     )]
-    pub sale_token_account: Account<'info, TokenAccount>,
+    pub sale_token_account: InterfaceAccount<'info, TokenAccount>,
     #[account(mut)]
     /// CHECK:
     pub vesting_token_account: AccountInfo<'info>,
     #[account(mut)]
     /// CHECK:
     pub user: AccountInfo<'info>,
-    #[account(mut)]
-    pub target_token: Account<'info, Mint>,
+    pub target_token: InterfaceAccount<'info, Mint>,
     #[account(mut)]
     pub signer: Signer<'info>,
     pub system_program: Program<'info, System>,
-    pub token_program: Program<'info, Token>,
+    pub token_program: Interface<'info, TokenInterface>,
     pub rent: Sysvar<'info, Rent>,
     pub associated_token_program: Program<'info, AssociatedToken>,
 }
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct VestingParams {
-    start_date: u32,
-    duration: u32,
-    amount: u64,
-    vesting_type: VestingType,
+    pub start_date: u32,
+    pub duration: u32,
+    pub amount: u64,
+    pub vesting_type: VestingType,
 }
 
 pub fn initialize_vesting(
@@ -65,17 +67,26 @@ pub fn initialize_vesting(
         },
     ));
 
+    let target_token = ctx.accounts.target_token.key();
+
+    let seeds: &[&[&[u8]]] = &[&[
+        ctx.accounts.user.key.as_ref(),
+        target_token.as_ref(),
+        &[ctx.bumps.vesting]
+    ]];
+
     // Transfer tokens in the vesting
-    let cpi_accounts = Transfer {
+    let cpi_accounts = TransferChecked {
+        mint: ctx.accounts.target_token.to_account_info(),
         from: ctx.accounts.sale_token_account.to_account_info(),
         to: ctx.accounts.vesting_token_account.to_account_info(),
-        authority: ctx.accounts.signer.to_account_info(),
+        authority: ctx.accounts.vesting.to_account_info(),
     };
 
     let cpi_program = ctx.accounts.token_program.to_account_info();
-    let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
+    let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, seeds);
 
-    token::transfer(cpi_ctx, params.amount)?;
+    transfer_checked(cpi_ctx, params.amount, ctx.accounts.target_token.decimals)?;
 
     Ok(())
 }

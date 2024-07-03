@@ -1,8 +1,8 @@
 import * as anchor from "@coral-xyz/anchor";
-import { BN } from "bn.js";
+import { BN, min } from "bn.js";
 import { Program } from "@coral-xyz/anchor";
 import { MemeLaunchpad } from "../target/types/meme_launchpad";
-import { ComputeBudgetInstruction, ComputeBudgetProgram, Keypair, PublicKey, Signer, Transaction, } from "@solana/web3.js";
+import { ComputeBudgetInstruction, ComputeBudgetProgram, Keypair, PublicKey, Signer, Transaction, SystemProgram } from "@solana/web3.js";
 import {
   createMint,
   createAccount,
@@ -59,7 +59,7 @@ describe.only("meme_launchpad", () => {
 
   before(async () => {
     await createMint(provider.connection, wallet.payer, wallet.publicKey, wallet.publicKey, 9, paymentToken, {},
-      TOKEN_2022_PROGRAM_ID)
+      TOKEN_2022_PROGRAM_ID);
 
     const ata = await createAssociatedTokenAccount(
       provider.connection,
@@ -84,6 +84,53 @@ describe.only("meme_launchpad", () => {
     )
 
   });
+
+  // it("Is initialized!", async () => {
+  //   // Add your test here.
+  //   const tx = await program.methods.initialize().rpc();
+  //   console.log("Your transaction signature", tx);
+  // });
+
+  // it("create token", async () => {
+
+  //   const params = {
+  //     name: "Meme Launchpad",
+  //     symbol: "ML",
+  //     decimals: 8,
+  //     uri: "",
+  //   }
+
+  //   const mint = anchor.web3.Keypair.generate();
+  //   const tokenAccount = await getAssociatedTokenAddress(
+  //     mint.publicKey, 
+  //     wallet.publicKey,
+  //     false,
+  //     TOKEN_2022_PROGRAM_ID
+  //   );
+
+  //   const authority = anchor.web3.PublicKey.findProgramAddressSync(
+  //     [
+  //       Buffer.from("authority")
+  //     ],
+  //     program.programId
+  //   )[0]
+
+  //   // Add your test here.
+  //   const tx = await program.methods.createToken(params).accounts({
+  //     signer: wallet.publicKey,
+  //     mint: mint.publicKey,
+  //     tokenAccount: tokenAccount,
+  //     tokenProgram: TOKEN_2022_PROGRAM_ID,
+  //     authority: authority,
+  //     associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+  //     systemProgram: anchor.web3.SystemProgram.programId,
+  //     rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+
+  //   }).signers([wallet.payer, mint]).rpc().catch(e => console.error(e));
+
+  //   const userTokenAccount = await provider.connection.getTokenAccountBalance(tokenAccount);
+  //   console.log("userTokenAccount", userTokenAccount);
+  // });
 
   it("create launchpad", async () => {
     const token_params = {
@@ -110,6 +157,11 @@ describe.only("meme_launchpad", () => {
         pricingModel: { fixed: {} },
         amountFunction: { fixed: {} },
         startPrice: new BN(50),
+      },
+      vesting: {
+        duration: 10,
+        vestingModel: { discrete: [2] },
+        percentage: 10_00, 
       },
       saleAmount: new BN(1000).mul(new BN(10).pow(new BN(token_params.decimals))),
       liqAmount: new BN(700).mul(new BN(10).pow(new BN(token_params.decimals))),
@@ -228,6 +280,12 @@ describe.only("meme_launchpad", () => {
         TOKEN_2022_PROGRAM_ID,
         ASSOCIATED_TOKEN_PROGRAM_ID
       )
+    ).add(
+      SystemProgram.transfer({
+        fromPubkey: wallet.publicKey,
+        toPubkey: user.publicKey,
+        lamports: 1000000000, // 1 sol
+      })
     );
 
     await provider.sendAndConfirm(transaction, [wallet.payer]);
@@ -248,8 +306,10 @@ describe.only("meme_launchpad", () => {
       params
     ).accounts({
       ...purshaseAddresses,
+      vestingProgram: anchor.workspace.Vesting.programId
     }).signers([user]).rpc().catch(e => console.error(e));
 
+    console.log(await provider.connection.getBalance(purshaseAddresses.vestingTargetTokenAccount))
     const userTokenAccount = await provider.connection.getTokenAccountBalance(purshaseAddresses.userTargetTokenAccount);
     // console.log("userTokenAccount", userTokenAccount);
   });
@@ -339,7 +399,7 @@ describe.only("meme_launchpad", () => {
       ).accounts({ ...purshaseAddresses }).signers([user]).rpc(),
       "Sale hasn't started"
     )
-
+    
     await new Promise((resolve) => setTimeout(resolve, 20000));
 
     await program.methods.buyToken(
