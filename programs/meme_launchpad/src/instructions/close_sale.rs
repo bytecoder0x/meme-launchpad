@@ -1,8 +1,6 @@
 use anchor_lang::prelude::*;
 use anchor_spl::{
-    token::{Token, TokenAccount as SplTokenAccount},
-    associated_token::AssociatedToken,
-    token_interface::{Mint, TokenAccount, TokenInterface, TransferChecked, transfer_checked},
+    associated_token::{self, AssociatedToken}, token::{Token, TokenAccount as SplTokenAccount}, token_interface::{transfer_checked, Mint, TokenAccount, TokenInterface, TransferChecked}
 };
 
 use crate::{
@@ -82,7 +80,7 @@ pub struct CloseSale<'info> {
 
     /// CHECK: creator lp ATA token account, init by cp-swap
     #[account(mut)]
-    pub user_lp_token: AccountInfo<'info>,
+    pub user_lp_token: UncheckedAccount<'info>,
 
     /// CHECK: creator lp ATA token account, init by cp-swap
     #[account(mut)]
@@ -256,7 +254,7 @@ pub fn close_sale(ctx: Context<CloseSale>) -> Result<()> {
     transfer_checked(payment_cpi_ctx, ctx.accounts.sale_payment_token_account.amount, ctx.accounts.payment_token.decimals)?;
 
 
-    // let user_lp = ctx.accounts.user_lp_token.to_account_info();
+    let user_lp = ctx.accounts.user_lp_token.to_account_info();
 
     // let user_lp = ctx.accounts.user_lp_token.clone();
     let cpi_accounts = raydium_cp_swap::cpi::accounts::Initialize {
@@ -327,27 +325,39 @@ pub fn close_sale(ctx: Context<CloseSale>) -> Result<()> {
         sale.common.close_time as u64,
     );
 
-    // user_lp.lo
-    // let 
-    // let user_lp = *ctx.accounts.user_lp_token.;
+    let _ = associated_token::create(CpiContext::new(
+        ctx.accounts.associated_token_program.to_account_info(),
+        associated_token::Create {
+            payer: ctx.accounts.signer.to_account_info(),
+            associated_token: ctx.accounts.sale_lp_token.to_account_info(),
+            authority: ctx.accounts.sale.to_account_info(),
+            mint: ctx.accounts.lp_mint.to_account_info(),
+            system_program: ctx.accounts.system_program.to_account_info(),
+            token_program: ctx.accounts.token_program.to_account_info(),
+        },
+    ));
 
-    // let mut buf = &user_lp.try_borrow_mut_data()?[..];
-    // let user_lp_token_info =  SplTokenAccount::try_deserialize(*user_lp)?;
-    // let a = ctx.accounts.user_lp_token.clone().data.try_borrow().unwrap();
-  
+    //  Transfer lp tokens from user to sale account
+    let amount; 
+    {
+    
+        let mut data: &[u8] = &ctx.accounts.user_lp_token.try_borrow_data()?;
+        let res = SplTokenAccount::try_deserialize(&mut data)?;
+        amount = res.amount;
+    }
+    
+    msg!("3");
+    msg!("1");
+    let transfer_cpi_ctx = CpiContext::new(
+        ctx.accounts.token_program.to_account_info(),
+        TransferChecked {
+            mint: ctx.accounts.lp_mint.to_account_info(),
+            from: ctx.accounts.user_lp_token.to_account_info(),
+            to: ctx.accounts.sale_lp_token.to_account_info(),
+            authority: ctx.accounts.signer.to_account_info(),
+        },
+    );
 
-    // let transfer_cpi_ctx = CpiContext::new(
-    //     ctx.accounts.token_program.to_account_info(),
-    //     TransferChecked {
-    //         mint: ctx.accounts.lp_mint.to_account_info(),
-    //         from: ctx.accounts.user_lp_token.to_account_info(),
-    //         to: ctx.accounts.sale_lp_token.to_account_info(),
-    //         authority: ctx.accounts.signer.to_account_info(),
-    //     },
-    // );
-    // let r = Account::<SplTokenAccount>::try_from(&ctx.accounts.user_lp_token.to_account_info()).unwrap();
-    // msg!("Lp amount: {}", r.amount);
-    // transfer_checked(transfer_cpi_ctx, r.amount, 9)?;
-
+    transfer_checked(transfer_cpi_ctx, amount, 9)?;
     Ok(())
 }
