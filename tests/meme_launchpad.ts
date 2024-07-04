@@ -10,6 +10,9 @@ import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
   createAssociatedTokenAccount,
   burn,
+  transfer,
+  getAccount,
+  getAssociatedTokenAddress,
 } from "@solana/spl-token";
 import { expect } from "chai";
 import { getCloseSaleAddresses, getCreateSaleAddresses, getPurshaseAddresses, getTokenAndSaleParams } from "./helpers/sale";
@@ -24,7 +27,7 @@ const Day = 24 * 60 * 60;
 const RAYDIUM_PROGRAM_ID = new PublicKey('CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C');
 const createPoolFeeReveiver = new PublicKey('DNXgeM9EiiaAbaWvwjHj9fQQLAX5ZsfHyvmYUNRAdNC8');
 
-describe.only("meme_launchpad", () => {
+describe("meme_launchpad", () => {
   // Configure the client to use the local cluster.
   const provider = anchor.AnchorProvider.env()
   anchor.setProvider(provider);
@@ -101,7 +104,7 @@ describe.only("meme_launchpad", () => {
       paymentToken.publicKey,
       ATA,
       wallet.payer,
-      10000000000 * 10 ** 8,
+      10000000000 * (10 ** 8),
       [],
       {},
       TOKEN_2022_PROGRAM_ID
@@ -201,7 +204,7 @@ describe.only("meme_launchpad", () => {
     
     await provider.sendAndConfirm(transaction, [wallet.payer]);
 
-    const amountPaymentToken = 10000000000 * 10 ** 8;
+    const amountPaymentToken = 10000000000 * (10 ** 8);
     await mintTokens(purshaseAddresses.userPaymentTokenAccount, paymentToken.publicKey, amountPaymentToken);
 
     await program.methods.buyToken(
@@ -230,14 +233,6 @@ describe.only("meme_launchpad", () => {
     const delay = end + 20;
 
     const { token_params, sale_params } = getTokenAndSaleParams(start, end, delay);
-
-    const saleAddresses = getCreateSaleAddresses(
-      wallet.publicKey,
-      newMint.publicKey,
-      paymentToken.publicKey,
-      free_account.publicKey,
-      program.programId
-    );
 
     const tx = await program.methods.createLaunchpad({
       freeAccount: free_account.publicKey,
@@ -310,6 +305,37 @@ describe.only("meme_launchpad", () => {
     );
   });
 
+  it('transfer tokens from free account', async () => {
+    const tokenAmount = 100 * (10 ** 8);
+
+    const initialFreeAccountBalance  = await provider.connection.getTokenAccountBalance(saleAddresses.freeTokenAccount);
+    const initialReceiverBalance = await provider.connection.getTokenAccountBalance(purshaseAddresses.userTargetTokenAccount);
+
+    const tx = await program.methods
+      .transferToken(new BN((tokenAmount)))
+      .accounts({
+        signer: saleAddresses.freeAccount,
+        sale: saleAddresses.sale,
+        authority: saleAddresses.authority,
+        targetToken: saleAddresses.targetToken,
+        signerTargetTokenAccount: saleAddresses.freeTokenAccount,
+        receiverTargetTokenAccount: purshaseAddresses.userTargetTokenAccount,
+        receiver: user2.publicKey,
+        tokenProgram: TOKEN_2022_PROGRAM_ID
+      })
+      .signers([free_account])
+      .rpc()
+      .catch((e) => console.error(e));
+
+      const finalFreeAccountBalance  = await provider.connection.getTokenAccountBalance(saleAddresses.freeTokenAccount);
+      const finalReceiverBalance = await provider.connection.getTokenAccountBalance(purshaseAddresses.userTargetTokenAccount);
+      const accountInfo = await getAccount(provider.connection, purshaseAddresses.userTargetTokenAccount, "confirmed", TOKEN_2022_PROGRAM_ID);
+
+      expect(accountInfo.isFrozen).to.be.eq(true);
+      expect(Number(initialFreeAccountBalance.value.amount) - tokenAmount).to.be.eq(Number(finalFreeAccountBalance.value.amount));
+      expect(Number(initialReceiverBalance.value.amount) + tokenAmount).to.be.eq(Number(finalReceiverBalance.value.amount));
+  });
+
   it('close sale', async () => {
     await new Promise((resolve) => setTimeout(resolve, 10000));
 
@@ -321,11 +347,26 @@ describe.only("meme_launchpad", () => {
     ]
 
     const ataTransaction = await createATA(wallet.publicKey, ATACreationAddresses);
-    await provider.sendAndConfirm(ataTransaction, [wallet.payer])
+    await provider.sendAndConfirm(ataTransaction, [wallet.payer]);
 
-    const tx = await program.methods.closeSale().accounts({
-      ...closeSaleAddresses
-    }).preInstructions([additionalComputeBudgetInstruction]).signers([wallet.payer]).rpc().catch(e => console.error(e));
+    const saleAccountInfo = await program.account.sale.fetch(closeSaleAddresses.sale);
+    const liquidityTargetToken = Number(saleAccountInfo.liqAmount);
+
+    const tx = await program.methods
+        .closeSale()
+        .accounts({
+            ...closeSaleAddresses,
+        })
+        .preInstructions([additionalComputeBudgetInstruction])
+        .signers([wallet.payer])
+        .rpc()
+        .catch((e) => console.error(e));
+    
+    const targetTokenVaultBalance  = await provider.connection.getTokenAccountBalance(closeSaleAddresses.targetTokenVault);
+    const salePaymentBalance = await provider.connection.getTokenAccountBalance(closeSaleAddresses.salePaymentTokenAccount);
+
+    expect(Number(targetTokenVaultBalance.value.amount)).to.be.eq(liquidityTargetToken);
+    expect(Number(salePaymentBalance.value.amount)).to.be.eq(0);
   })
 
   it("thaw account", async () => {
@@ -338,6 +379,10 @@ describe.only("meme_launchpad", () => {
       tokenProgram: TOKEN_2022_PROGRAM_ID,
     }).signers([user]).rpc().catch(e => console.error(e));
   
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
+    const accountInfo = await getAccount(provider.connection, purshaseAddresses.userTargetTokenAccount, "confirmed", TOKEN_2022_PROGRAM_ID);
+    expect(accountInfo.isFrozen).to.be.eq(false);
   })
 
   it("claim tokens", async () => {
@@ -370,9 +415,14 @@ describe.only("meme_launchpad", () => {
 
   it("swap after sale", async () => {
     await new Promise((resolve) => setTimeout(resolve, 3000));
-    
+    const initialUserTargetBalance  = await provider.connection.getTokenAccountBalance(purshaseAddresses.userTargetTokenAccount);
+    const initialUserPaymentBalance = await provider.connection.getTokenAccountBalance(purshaseAddresses.userPaymentTokenAccount);
+
+    const amountIn = new BN(1000000);
+    const minimumAmountOut = new BN(30000);
+
     const tx = await cp_swap_program.methods.swapBaseInput(
-      new BN(1000000), new BN(30000)
+      amountIn, minimumAmountOut
     ).accounts({
       payer: user.publicKey,
       authority: closeSaleAddresses.raydiumAuthority,
@@ -388,6 +438,12 @@ describe.only("meme_launchpad", () => {
       outputTokenMint: paymentToken.publicKey,
       observationState: closeSaleAddresses.observationState,
     }).signers([user]).rpc().catch(e => console.error(e));
+
+    const finalUserTargetBalance  = await provider.connection.getTokenAccountBalance(purshaseAddresses.userTargetTokenAccount);
+    const finalUserPaymentBalance = await provider.connection.getTokenAccountBalance(purshaseAddresses.userPaymentTokenAccount);
+
+    expect(Number(initialUserTargetBalance.value.amount)).to.be.eq(Number(finalUserTargetBalance.value.amount) + Number(amountIn));
+    expect(Number(initialUserPaymentBalance.value.amount)).to.be.lessThan(Number(finalUserPaymentBalance.value.amount) - Number(minimumAmountOut));
   });
 
   it("burn tokens after start of trades", async () => {
