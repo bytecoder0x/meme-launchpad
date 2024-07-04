@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
+use anchor_spl::token_interface::{TokenInterface, TokenAccount, Mint, TransferChecked, transfer_checked};
 
 use crate::{
     error::VestingError,
@@ -20,11 +20,11 @@ pub struct ClaimTokens<'info> {
         constraint = user_token_account.owner == user.key(),
         constraint = user_token_account.mint == target_token.key(),
     )]
-    pub user_token_account: Account<'info, TokenAccount>,
+    pub user_token_account: InterfaceAccount<'info, TokenAccount>,
     #[account(mut)]
-    pub vesting_token_account: Account<'info, TokenAccount>,
-    pub target_token: Account<'info, Mint>,
-    pub token_program: Program<'info, Token>,
+    pub vesting_token_account: InterfaceAccount<'info, TokenAccount>,
+    pub target_token: InterfaceAccount<'info, Mint>,
+    pub token_program: Interface<'info, TokenInterface>,
 }
 
 pub fn allocate_tokens(ctx: Context<ClaimTokens>) -> Result<()> {
@@ -49,7 +49,8 @@ pub fn allocate_tokens(ctx: Context<ClaimTokens>) -> Result<()> {
         &[ctx.bumps.vesting]
     ]];
 
-    let cpi_accounts = Transfer {
+    let cpi_accounts = TransferChecked {
+        mint: ctx.accounts.target_token.to_account_info(),
         from: ctx.accounts.vesting_token_account.to_account_info(),
         to: ctx.accounts.user_token_account.to_account_info(),
         authority: ctx.accounts.vesting.to_account_info(),
@@ -58,7 +59,7 @@ pub fn allocate_tokens(ctx: Context<ClaimTokens>) -> Result<()> {
     let cpi_program = ctx.accounts.token_program.to_account_info();
     let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer_seeds);
 
-    token::transfer(cpi_ctx, claimable_amount)?;
+    transfer_checked(cpi_ctx, claimable_amount, ctx.accounts.target_token.decimals)?;
 
     Ok(())
 }

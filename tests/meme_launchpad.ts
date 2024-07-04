@@ -9,6 +9,7 @@ import {
   TOKEN_2022_PROGRAM_ID,
   ASSOCIATED_TOKEN_PROGRAM_ID,
   createAssociatedTokenAccount,
+  burn,
 } from "@solana/spl-token";
 import { expect } from "chai";
 import { getCloseSaleAddresses, getCreateSaleAddresses, getPurshaseAddresses, getTokenAndSaleParams } from "./helpers/sale";
@@ -218,7 +219,6 @@ describe.only("meme_launchpad", () => {
 
     expect(Number(userBalance.value.amount)).to.be.eq(expectedUserBalance);
     expect(Number(vestingBalance.value.amount)).to.be.eq(expectedVestingBalance);
-    expect(Number(vestingBalance.value.amount)).to.be.eq(expectedVestingBalance);
     expect(Number(salePaymentBalance.value.amount)).to.be.eq(Number(params.amount));
   });
 
@@ -299,8 +299,19 @@ describe.only("meme_launchpad", () => {
     )
   })
 
+  it("no more tokens can mint", async () => {
+    await expectSystemFail(
+      mintTokens(purshaseAddresses.userTargetTokenAccount, mint.publicKey, 1),
+      "Account is frozen"
+    );
+    await expectSystemFail(
+        mintTokens(purshaseAddresses.saleTargetTokenAccount, mint.publicKey, 1),
+        "the total supply of this token is fixed"
+    );
+  });
+
   it('close sale', async () => {
-    await new Promise((resolve) => setTimeout(resolve, 40000));
+    await new Promise((resolve) => setTimeout(resolve, 10000));
 
     const ATACreationAddresses = [
       {
@@ -329,6 +340,34 @@ describe.only("meme_launchpad", () => {
   
   })
 
+  it("claim tokens", async () => {
+    const vestingProgram = anchor.workspace.Vesting;
+
+    const userBalanceBeforeClaim = await provider.connection.getTokenAccountBalance(purshaseAddresses.userTargetTokenAccount);
+    const vestingBalanceBeforeClaim = await provider.connection.getTokenAccountBalance(purshaseAddresses.vestingTargetTokenAccount);
+    const halfTokenAmountInVesting = Number(vestingBalanceBeforeClaim.value.amount) / 2;
+
+    // We can claim half of the amount in vesting. 
+    // Since the step is 5 seconds, and 10 seconds have passed since the beginning of the bought of tokens.
+    // The total vesting time is 20 seconds.
+    await vestingProgram.methods
+      .claimTokens()
+      .accounts({
+        vesting: purshaseAddresses.vesting,
+        userTokenAccount: purshaseAddresses.userTargetTokenAccount,
+        vestingTokenAccount: purshaseAddresses.vestingTargetTokenAccount,
+        targetToken: mint.publicKey,
+        tokenProgram: TOKEN_2022_PROGRAM_ID,
+        user: user.publicKey,
+    }).signers([user]).rpc().catch(e => console.error(e));
+
+    const userBalanceAfterClaim = await provider.connection.getTokenAccountBalance(purshaseAddresses.userTargetTokenAccount);
+    const vestingBalanceAfterClaim = await provider.connection.getTokenAccountBalance(purshaseAddresses.vestingTargetTokenAccount);
+
+    expect(Number(userBalanceAfterClaim.value.amount)).to.be.eq(Number(userBalanceBeforeClaim.value.amount) + halfTokenAmountInVesting);
+    expect(Number(vestingBalanceAfterClaim.value.amount)).to.be.eq(Number(vestingBalanceBeforeClaim.value.amount) - halfTokenAmountInVesting);
+  });
+
   it("swap after sale", async () => {
     await new Promise((resolve) => setTimeout(resolve, 3000));
     
@@ -349,5 +388,26 @@ describe.only("meme_launchpad", () => {
       outputTokenMint: paymentToken.publicKey,
       observationState: closeSaleAddresses.observationState,
     }).signers([user]).rpc().catch(e => console.error(e));
-})
+  });
+
+  it("burn tokens after start of trades", async () => {
+    const userBalanceBeforeBurn = await provider.connection.getTokenAccountBalance(purshaseAddresses.userTargetTokenAccount);
+    const tokenAmount = 10000;
+
+    await burn(
+        provider.connection,
+        user,
+        purshaseAddresses.userTargetTokenAccount,
+        mint.publicKey,
+        user.publicKey,
+        tokenAmount,
+        [],
+        {},
+        TOKEN_2022_PROGRAM_ID
+    );
+
+    const userBalanceAfterBurn = await provider.connection.getTokenAccountBalance(purshaseAddresses.userTargetTokenAccount);
+
+    expect(Number(userBalanceBeforeBurn.value.amount)).to.be.eq(Number(userBalanceAfterBurn.value.amount) + tokenAmount);
+  });
 });

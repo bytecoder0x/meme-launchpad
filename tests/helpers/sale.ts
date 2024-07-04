@@ -324,8 +324,8 @@ export function getTokenAndSaleParams(start: number, end: number, delay: number)
           startPrice: new BN(50),
         },
         vesting: {
-            duration: 10,
-            vestingModel: { discrete: [2] },
+            duration: 20,
+            vestingModel: { discrete: [5] },
             percentage: 50_00, 
         },
         saleAmount: new BN(1000).mul(new BN(10).pow(new BN(token_params.decimals))),
