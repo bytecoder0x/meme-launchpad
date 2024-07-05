@@ -320,7 +320,7 @@ describe("meme_launchpad", () => {
         targetToken: saleAddresses.targetToken,
         signerTargetTokenAccount: saleAddresses.freeTokenAccount,
         receiverTargetTokenAccount: purshaseAddresses.userTargetTokenAccount,
-        receiver: user2.publicKey,
+        receiver: user.publicKey,
         tokenProgram: TOKEN_2022_PROGRAM_ID
       })
       .signers([free_account])
