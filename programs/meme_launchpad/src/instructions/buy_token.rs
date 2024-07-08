@@ -101,16 +101,25 @@ pub fn buy_token(ctx: Context<BuyToken>, params: BuyTokenParams) -> Result<()> {
     require!(!sale.is_ended(curtime), MemeLaunchpadError::SaleEnded);
 
     let price = sale.get_sale_price(params.amount, curtime)?;
+
+    let target_token_desimals = ctx.accounts.target_token.decimals;
+    let payment_token_desimals = ctx.accounts.payment_token.decimals;
+
+    let amount_out_decimals_factor = 10u64.pow(target_token_desimals as u32);
+    let amount_in_decimals_factor = 10u64.pow(payment_token_desimals as u32);
+
     let amount_in;
     let amount_out;
 
+    ctx.accounts.payment_token.decimals;
+
     if params.amount_specified_input {
         amount_in = params.amount;
-        amount_out = amount_in / price;
+        amount_out = (amount_in * amount_out_decimals_factor) / price;
     } else {
         amount_out = params.amount;
-        amount_in = amount_out * price;
-    }
+        amount_in = (amount_out * price) / amount_in_decimals_factor;
+    }// 2 000 000 00 * 1 000 000 = 2 000 000 000 000 00 / 1 000 000 00 = 2 000 000
 
     if amount_out < sale.min_cap {
         return Err(MemeLaunchpadError::BelowMinCap.into());
