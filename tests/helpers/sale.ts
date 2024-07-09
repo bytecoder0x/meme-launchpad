@@ -300,7 +300,7 @@ export function getCloseSaleAddresses(
     };
 }
 
-export function getTokenAndSaleParams(start: number, end: number, delay: number) {
+export function getTokenAndSaleParams(start: number, end: number, delay: number, startPrice: anchor.BN) {
     const token_params = {
         name: "Meme Launchpad",
         symbol: "ML",
@@ -321,7 +321,7 @@ export function getTokenAndSaleParams(start: number, end: number, delay: number)
         pricing: {
           pricingModel: { fixed: {} },
           amountFunction: { fixed: {} },
-          startPrice: new BN(5).mul(new BN(10).pow(new BN(8))), // 0.5$ per token since payment token has 9 desimals
+          startPrice: startPrice, 
         },
         vesting: {
             duration: 20,

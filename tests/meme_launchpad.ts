@@ -157,7 +157,7 @@ describe("meme_launchpad", () => {
     const end = start + 10;
     const delay = end + 10;
 
-    const { token_params, sale_params } = getTokenAndSaleParams(start, end, delay);
+    const { token_params, sale_params } = getTokenAndSaleParams(start, end, delay, new BN(5).mul(new BN(10).pow(new BN(8))));
 
     const tx = await program.methods.createLaunchpad({
       freeAccount: free_account.publicKey,
@@ -213,6 +213,7 @@ describe("meme_launchpad", () => {
       ...purshaseAddresses,
     }).signers([user]).rpc().catch(e => console.error(e));
 
+    // we paid 50 usdc at price 0.5$ per token and expected total amount target token must be 100
     const totalAmountTargetToken = 100 * 10 ** 8;
     const expectedVestingBalance = totalAmountTargetToken * 50_00 / 100_00; // 50% from total amount
     const expectedUserBalance = totalAmountTargetToken - expectedVestingBalance;
@@ -225,6 +226,94 @@ describe("meme_launchpad", () => {
     expect(Number(salePaymentBalance.value.amount)).to.be.eq(Number(params.amount));
   });
 
+  it.skip("buy tokens with different payment tokens", async () => {
+    const newPaymentToken = new anchor.web3.Keypair();
+
+    const newSaleAddresses = getCreateSaleAddresses(
+      wallet.publicKey,
+      mint.publicKey,
+      newPaymentToken.publicKey,
+      free_account.publicKey,
+      program.programId
+    );
+
+    const newPurshaseAddresses = getPurshaseAddresses(
+      mint.publicKey,
+      newPaymentToken.publicKey,
+      user2.publicKey,
+      program.programId
+    );
+
+    const params = {
+      amount: new BN(153).mul(new BN(10).pow(new BN(6))), // 15.3 token to buy
+      amountSpecifiedInput: false,
+    }
+
+    await createMint(provider.connection, wallet.payer, wallet.publicKey, wallet.publicKey, 6, newPaymentToken, {},
+      TOKEN_2022_PROGRAM_ID);
+
+      const start = (Date.now() / 1000);
+      const end = start + 10;
+      const delay = end + 10;
+  
+      const startPrice = new BN(78).mul(new BN(10).pow(new BN(4))); // price per token 0.78$
+
+      const { token_params, sale_params } = getTokenAndSaleParams(start, end, delay, startPrice);
+  
+      const tx = await program.methods.createLaunchpad({
+        freeAccount: free_account.publicKey,
+        freeAmount: new BN(588).mul(new BN(10).pow(new BN(token_params.decimals))),
+        createTokenParams: token_params,
+        createSaleParams: sale_params,
+      }).accounts({
+        ...newSaleAddresses
+      })
+        .preInstructions([additionalComputeBudgetInstruction])
+        .signers([wallet.payer, mint]).rpc().catch(e => console.error(e));
+
+    const ATACreationAddresses = [
+      {
+        user: user2.publicKey,
+        mint: newPaymentToken.publicKey
+      }, 
+      {
+        user: user2.publicKey,
+        mint: mint.publicKey
+      }
+    ]
+
+    const transaction = (await createATA(wallet.publicKey, ATACreationAddresses)).add(
+        SystemProgram.transfer({
+            fromPubkey: wallet.publicKey,
+            toPubkey: user2.publicKey,
+            lamports: 1000000000, // 1 sol
+        })
+    );
+    
+    await provider.sendAndConfirm(transaction, [wallet.payer]);
+
+    const amountPaymentToken = 10000000000 * (10 ** 9);
+    await mintTokens(newPurshaseAddresses.userPaymentTokenAccount, newPaymentToken.publicKey, amountPaymentToken);
+
+    await program.methods.buyToken(
+      params
+    ).accounts({
+      ...newPurshaseAddresses,
+    }).signers([user2]).rpc().catch(e => console.error(e));
+
+    const totalAmountTargetToken = Number(params.amount);
+    const expectedVestingBalance = totalAmountTargetToken * 50_00 / 100_00; // 50% from total amount
+    const expectedUserBalance = totalAmountTargetToken - expectedVestingBalance;
+    const expectedSalePaymentBalance = Number(params.amount.mul(startPrice).div(new BN(10).pow(new BN(8))));
+    const userBalance = await provider.connection.getTokenAccountBalance(newPurshaseAddresses.userTargetTokenAccount);
+    const vestingBalance = await provider.connection.getTokenAccountBalance(newPurshaseAddresses.vestingTargetTokenAccount);
+    const salePaymentBalance = await provider.connection.getTokenAccountBalance(newPurshaseAddresses.salePaymentTokenAccount);
+
+    expect(Number(userBalance.value.amount)).to.be.eq(expectedUserBalance);
+    expect(Number(vestingBalance.value.amount)).to.be.eq(expectedVestingBalance);
+    expect(Number(salePaymentBalance.value.amount)).to.be.eq(expectedSalePaymentBalance);
+  });
+
   it.skip('sale timerange test', async () => {
     const newMint = anchor.web3.Keypair.generate();
 
@@ -232,7 +321,7 @@ describe("meme_launchpad", () => {
     const end = start + 20;
     const delay = end + 20;
 
-    const { token_params, sale_params } = getTokenAndSaleParams(start, end, delay);
+    const { token_params, sale_params } = getTokenAndSaleParams(start, end, delay, new BN(5).mul(new BN(10).pow(new BN(8))));
 
     const tx = await program.methods.createLaunchpad({
       freeAccount: free_account.publicKey,
