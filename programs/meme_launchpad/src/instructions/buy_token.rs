@@ -102,24 +102,28 @@ pub fn buy_token(ctx: Context<BuyToken>, params: BuyTokenParams) -> Result<()> {
 
     let price = sale.get_sale_price(params.amount, curtime)?;
 
-    let target_token_desimals = ctx.accounts.target_token.decimals;
-    let payment_token_desimals = ctx.accounts.payment_token.decimals;
-
-    let amount_out_decimals_factor = 10u64.pow(target_token_desimals as u32);
-    let amount_in_decimals_factor = 10u64.pow(payment_token_desimals as u32);
+    let target_token_decimals = 10u64.pow(ctx.accounts.target_token.decimals as u32);
 
     let amount_in;
     let amount_out;
 
-    ctx.accounts.payment_token.decimals;
-
+    // price 0.5$, payment token has 9 desimals, target - 8
+    // we want to buy 100 token for 50 usdt
     if params.amount_specified_input {
         amount_in = params.amount;
-        amount_out = (amount_in * amount_out_decimals_factor) / price;
+        amount_out = amount_in
+            .checked_mul(target_token_decimals)
+            .and_then(|x| x.checked_div(price))
+            .ok_or(MemeLaunchpadError::MathOverflow)?;
+        // 50 000 000 000 * 1 000 000 00  = 5 000 000 000 000 000 000 / 500 000 000 = 10 000 000 000 - 100 token
     } else {
         amount_out = params.amount;
-        amount_in = (amount_out * price) / amount_in_decimals_factor;
-    }// 2 000 000 00 * 1 000 000 = 2 000 000 000 000 00 / 1 000 000 00 = 2 000 000
+        amount_in = amount_out         
+            .checked_mul(price)
+            .and_then(|x| x.checked_div(target_token_decimals)) 
+            .ok_or(MemeLaunchpadError::MathOverflow)?;
+        // 10 000 000 000 * 500 000 000 = 5 000 000 000 000 000 000 / 1 000 000 00 = 50 000 000 000 - 50 usdc
+    }
 
     if amount_out < sale.min_cap {
         return Err(MemeLaunchpadError::BelowMinCap.into());
@@ -129,12 +133,22 @@ pub fn buy_token(ctx: Context<BuyToken>, params: BuyTokenParams) -> Result<()> {
         return Err(MemeLaunchpadError::AboveMaxCap.into());
     }
 
-    if sale.already_sold + amount_out >= sale.sale_amount {
+    let expected_already_sold = sale.already_sold.checked_add(amount_out).ok_or(MemeLaunchpadError::MathOverflow)?;
+    
+    if expected_already_sold >= sale.sale_amount {
         return Err(MemeLaunchpadError::SaleLimitExceeded.into());
     }
 
-    let vesting_amount_out = (amount_out * sale.vesting.percentage as u64) / 100_00;
-    let user_amount_out = amount_out - vesting_amount_out;
+    let vesting_percentage = sale.vesting.percentage as u64;
+
+    let vesting_amount_out = amount_out
+        .checked_mul(vesting_percentage)
+        .and_then(|x| x.checked_div(100_00))
+        .ok_or(MemeLaunchpadError::MathOverflow)?;
+
+    let user_amount_out = amount_out
+        .checked_sub(vesting_amount_out)
+        .ok_or(MemeLaunchpadError::MathOverflow)?;
 
     msg!("transfer paymment");
     // transfer amount_in from user_payment_token_account to sale_payment_token_account
@@ -236,7 +250,9 @@ pub fn buy_token(ctx: Context<BuyToken>, params: BuyTokenParams) -> Result<()> {
     );
     freeze_account(froze_cpi_context)?;
 
-    sale.already_sold += amount_out;
+    sale.already_sold = sale.already_sold
+    .checked_add(amount_out)
+    .ok_or(MemeLaunchpadError::MathOverflow)?;
 
     Ok(())
 }

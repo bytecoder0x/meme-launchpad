@@ -179,7 +179,7 @@ describe("meme_launchpad", () => {
 
   it("buy tokens", async () => {
     const params = {
-      amount: new BN(100).mul(new BN(10).pow(new BN(8))),
+      amount: new BN(50).mul(new BN(10).pow(new BN(9))),
       amountSpecifiedInput: true,
     }
 
@@ -204,7 +204,7 @@ describe("meme_launchpad", () => {
     
     await provider.sendAndConfirm(transaction, [wallet.payer]);
 
-    const amountPaymentToken = 10000000000 * (10 ** 8);
+    const amountPaymentToken = 10000000000 * (10 ** 9);
     await mintTokens(purshaseAddresses.userPaymentTokenAccount, paymentToken.publicKey, amountPaymentToken);
 
     await program.methods.buyToken(
@@ -213,7 +213,7 @@ describe("meme_launchpad", () => {
       ...purshaseAddresses,
     }).signers([user]).rpc().catch(e => console.error(e));
 
-    const totalAmountTargetToken = 200000000;
+    const totalAmountTargetToken = 100 * 10 ** 8;
     const expectedVestingBalance = totalAmountTargetToken * 50_00 / 100_00; // 50% from total amount
     const expectedUserBalance = totalAmountTargetToken - expectedVestingBalance;
     const userBalance = await provider.connection.getTokenAccountBalance(purshaseAddresses.userTargetTokenAccount);
