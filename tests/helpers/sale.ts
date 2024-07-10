@@ -46,6 +46,14 @@ export function getPurshaseAddresses(
         TOKEN_2022_PROGRAM_ID
     );
 
+    const userPDA = anchor.web3.PublicKey.findProgramAddressSync(
+        [
+            user.toBuffer(),
+            sale.toBuffer()
+        ],
+        programId
+     )[0];
+
     const user_payment_token_account = getAssociatedTokenAddressSync(
         payment_token,
         user,
@@ -67,6 +75,7 @@ export function getPurshaseAddresses(
         salePaymentTokenAccount: sale_payment_token_account,
         vesting,
         vestingTargetTokenAccount: vesting_target_token_account,
+        user: userPDA,
         userPaymentTokenAccount: user_payment_token_account,
         userTargetTokenAccount: user_target_token_account,
         targetToken: target_token,

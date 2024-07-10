@@ -18,6 +18,12 @@ use crate::{
     state::{sale::Sale, token::TokenAuthority},
 };
 
+#[account]
+pub struct User {
+    pub total_purchased: u64,
+}
+
+
 #[derive(Accounts)]
 pub struct BuyToken<'info> {
     #[account(mut)]
@@ -36,9 +42,26 @@ pub struct BuyToken<'info> {
     )]
     pub authority: Account<'info, TokenAuthority>,
 
+    #[account(
+        init_if_needed,
+        payer = signer,
+        seeds = [signer.key().as_ref(), sale.key().as_ref()],
+        bump,
+        space = 8 + 8 
+    )]
+    pub user: Account<'info, User>,
+
     pub target_token: InterfaceAccount<'info, Mint>,
 
     pub payment_token: InterfaceAccount<'info, Mint>,
+
+    /// CHECK:
+    #[account(mut)]
+    pub vesting: AccountInfo<'info>,
+
+    /// CHECK:
+    #[account(mut)]
+    pub vesting_target_token_account: AccountInfo<'info>,
 
     /// CHECK:
     #[account(
@@ -72,14 +95,6 @@ pub struct BuyToken<'info> {
     )]
     pub user_target_token_account: InterfaceAccount<'info, TokenAccount>,
 
-    /// CHECK:
-    #[account(mut)]
-    pub vesting: AccountInfo<'info>,
-
-    /// CHECK:
-    #[account(mut)]
-    pub vesting_target_token_account: AccountInfo<'info>,
-
     system_program: Program<'info, System>,
     pub token_program: Interface<'info, TokenInterface>,
     pub vesting_program: Program<'info, Vesting>,
@@ -95,6 +110,7 @@ pub struct BuyTokenParams {
 
 pub fn buy_token(ctx: Context<BuyToken>, params: BuyTokenParams) -> Result<()> {
     let sale = &mut ctx.accounts.sale;
+    let user = &mut ctx.accounts.user;
     let curtime = sale.get_time()?;
 
     require!(sale.is_started(curtime), MemeLaunchpadError::SaleNotStarted);
@@ -107,7 +123,7 @@ pub fn buy_token(ctx: Context<BuyToken>, params: BuyTokenParams) -> Result<()> {
     let amount_in;
     let amount_out;
 
-    // price 0.5$, payment token has 9 desimals, target - 8
+    // price 0.5$, payment token has 6 desimals, target - 8
     // we want to buy 100 token for 50 usdt
     if params.amount_specified_input {
         amount_in = params.amount;
@@ -115,21 +131,23 @@ pub fn buy_token(ctx: Context<BuyToken>, params: BuyTokenParams) -> Result<()> {
             .checked_mul(target_token_decimals)
             .and_then(|x| x.checked_div(price))
             .ok_or(MemeLaunchpadError::MathOverflow)?;
-        // 50 000 000 000 * 1 000 000 00  = 5 000 000 000 000 000 000 / 500 000 000 = 10 000 000 000 - 100 token
+        // 50 000 000 * 1 000 000 00  = 5 000 000 000 000 000 / 500 000 = 10 000 000 000 - 100 token
     } else {
         amount_out = params.amount;
         amount_in = amount_out         
             .checked_mul(price)
             .and_then(|x| x.checked_div(target_token_decimals)) 
             .ok_or(MemeLaunchpadError::MathOverflow)?;
-        // 10 000 000 000 * 500 000 000 = 5 000 000 000 000 000 000 / 1 000 000 00 = 50 000 000 000 - 50 usdc
+        // 10 000 000 000 * 500 000 = 5 000 000 000 000 000 / 1 000 000 00 = 50 000 000 - 50 usdc
     }
 
     if amount_out < sale.min_cap {
         return Err(MemeLaunchpadError::BelowMinCap.into());
     }
 
-    if amount_out > sale.max_cap {
+    let user_new_total_purchased = user.total_purchased.checked_add(amount_out).ok_or(MemeLaunchpadError::MathOverflow)?;
+
+    if user_new_total_purchased > sale.max_cap {
         return Err(MemeLaunchpadError::AboveMaxCap.into());
     }
 
@@ -250,9 +268,10 @@ pub fn buy_token(ctx: Context<BuyToken>, params: BuyTokenParams) -> Result<()> {
     );
     freeze_account(froze_cpi_context)?;
 
+    user.total_purchased = user_new_total_purchased;
     sale.already_sold = sale.already_sold
-    .checked_add(amount_out)
-    .ok_or(MemeLaunchpadError::MathOverflow)?;
+        .checked_add(amount_out)
+        .ok_or(MemeLaunchpadError::MathOverflow)?;
 
     Ok(())
 }
