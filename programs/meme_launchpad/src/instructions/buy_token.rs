@@ -141,13 +141,13 @@ pub fn buy_token(ctx: Context<BuyToken>, params: BuyTokenParams) -> Result<()> {
         // 10 000 000 000 * 500 000 = 5 000 000 000 000 000 / 1 000 000 00 = 50 000 000 - 50 usdc
     }
 
-    if amount_out < sale.min_cap {
+    if sale.min_cap != 0 && amount_out < sale.min_cap {
         return Err(MemeLaunchpadError::BelowMinCap.into());
     }
-
+    
     let user_new_total_purchased = user.total_purchased.checked_add(amount_out).ok_or(MemeLaunchpadError::MathOverflow)?;
-
-    if user_new_total_purchased > sale.max_cap {
+    
+    if sale.max_cap != 0 && user_new_total_purchased > sale.max_cap {
         return Err(MemeLaunchpadError::AboveMaxCap.into());
     }
 
