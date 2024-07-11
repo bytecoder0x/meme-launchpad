@@ -224,6 +224,32 @@ describe("meme_launchpad", () => {
     expect(Number(userBalance.value.amount)).to.be.eq(expectedUserBalance);
     expect(Number(vestingBalance.value.amount)).to.be.eq(expectedVestingBalance);
     expect(Number(salePaymentBalance.value.amount)).to.be.eq(Number(params.amount));
+
+    const params2 = {
+      amount: new BN(100).mul(new BN(10).pow(new BN(8))),
+      amountSpecifiedInput: false,
+    }
+
+    await program.methods.buyToken(
+      params2
+    ).accounts({
+      ...purshaseAddresses,
+    }).signers([user]).rpc().catch(e => console.error(e));
+
+    const startPrice = new BN(5).mul(new BN(10).pow(new BN(8)));
+
+    // we want to get 100 token at price 0.5$ per token and expected total amount payment token must be 50
+    const totalAmountTargetToken2 = 100 * 10 ** 8;
+    const expectedVestingBalance2 = totalAmountTargetToken2 * 50_00 / 100_00; // 50% from total amount
+    const expectedUserBalance2 = totalAmountTargetToken - expectedVestingBalance;
+    const expectedSalePaymentBalance = Number(params2.amount.mul(startPrice).div(new BN(10).pow(new BN(8))));
+    const userBalance2 = await provider.connection.getTokenAccountBalance(purshaseAddresses.userTargetTokenAccount);
+    const vestingBalance2 = await provider.connection.getTokenAccountBalance(purshaseAddresses.vestingTargetTokenAccount);
+    const salePaymentBalance2 = await provider.connection.getTokenAccountBalance(purshaseAddresses.salePaymentTokenAccount);
+    
+    expect(Number(userBalance2.value.amount)).to.be.eq(expectedUserBalance + expectedUserBalance2);
+    expect(Number(vestingBalance2.value.amount)).to.be.eq(expectedVestingBalance + expectedVestingBalance2);
+    expect(Number(salePaymentBalance2.value.amount)).to.be.eq(Number(params.amount) + expectedSalePaymentBalance);
   });
 
   it.skip("buy tokens with different payment tokens", async () => {
