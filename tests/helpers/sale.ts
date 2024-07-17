@@ -186,7 +186,7 @@ export function getCloseSaleAddresses(
         raydiumProgramId
     )[0];
 
-    const isTargetTokenLess = mint < paymentToken;
+    const isTargetTokenLess = Buffer.compare(mint.toBuffer(), paymentToken.toBuffer()) <= 0;//mint < paymentToken;
     const poolState = anchor.web3.PublicKey.findProgramAddressSync(
         [
             Buffer.from('pool'),
@@ -338,7 +338,7 @@ export function getTokenAndSaleParams(start: number, end: number, delay: number,
             percentage: 50_00, 
         },
         saleAmount: new BN(1000).mul(new BN(10).pow(new BN(token_params.decimals))),
-        liqAmount: new BN(700).mul(new BN(10).pow(new BN(token_params.decimals))),
+        liqAmount: new BN(500).mul(new BN(10).pow(new BN(token_params.decimals))),
         maxCap: new BN(1000).mul(new BN(10).pow(new BN(token_params.decimals))),
         minCap: new BN(1).mul(new BN(10).pow(new BN(token_params.decimals))),
       }

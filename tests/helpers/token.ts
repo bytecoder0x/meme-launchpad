@@ -9,7 +9,8 @@ export async function createATA(
     accounts: {
         user: anchor.web3.PublicKey,
         mint: anchor.web3.PublicKey,
-    }[]
+        token_program?: anchor.web3.PublicKey,
+    }[],
 ) {
 
     let transaction = new Transaction();
@@ -20,7 +21,7 @@ export async function createATA(
             account.mint,
             account.user,
             false,
-            TOKEN_2022_PROGRAM_ID
+            account.token_program || TOKEN_2022_PROGRAM_ID
         )
 
         transaction = transaction.add(
@@ -29,10 +30,11 @@ export async function createATA(
                 ata,
                 account.user,
                 account.mint,
-                TOKEN_2022_PROGRAM_ID,
+
+                account.token_program || TOKEN_2022_PROGRAM_ID,
                 ASSOCIATED_TOKEN_PROGRAM_ID
             ))
     }
-    
+
     return transaction;
 }
