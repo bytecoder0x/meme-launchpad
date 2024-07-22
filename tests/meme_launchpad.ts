@@ -731,8 +731,6 @@ describe("meme_launchpad", () => {
       let swapTokensAmount = new BN(100).mul(new BN(10).pow(new BN(token_params.decimals)));
       // // let lpTokensAmount = new BN(300).mul(new BN(10).pow(new BN(9)));
       const inst = await program.methods.increaseLiq(
-        new BN(tokensToBuy)
-        // lpTokensAmount
       ).accounts({
         ...closeSaleAddresses
       }).signers([wallet.payer]).instruction();

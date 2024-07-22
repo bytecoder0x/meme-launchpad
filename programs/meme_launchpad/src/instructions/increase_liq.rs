@@ -167,11 +167,25 @@ pub struct IncreaseLiq<'info> {
     pub rent: Sysvar<'info, Rent>,
 }
 
-pub fn increase_liq(ctx: Context<IncreaseLiq>, amount: u64) -> Result<()> {
+pub fn increase_liq(ctx: Context<IncreaseLiq>) -> Result<()> {
     let target_key = ctx.accounts.target_token.key();
     let sale_seeds: &[&[&[u8]]] = &[&["sale".as_bytes(), target_key.as_ref(), &[ctx.bumps.sale]]];
     let is_target_token_less = ctx.accounts.target_token.key() < ctx.accounts.payment_token.key();
 
+    let (target_amount, payment_amount) = get_current_liquidity(
+        &ctx.accounts.target_token_vault.try_borrow_data()?,
+        &ctx.accounts.payment_token_vault.try_borrow_data()?,
+    )?;
+    let target_price: u128 = 1_000_000_000;
+
+    let tokens_amount_in = calculate_amount_in(
+        target_amount as u128,
+        payment_amount as u128,
+        target_price,
+        ctx.accounts.target_token.decimals,
+    ).unwrap();
+
+    msg!("swap tokens to get the desired price");
     let cpi_swap_accounts = raydium_cp_swap::cpi::accounts::SwapBaseInput{
         payer: ctx.accounts.sale.to_account_info(),
         authority: ctx.accounts.raydium_authority.to_account_info(),
@@ -194,8 +208,9 @@ pub fn increase_liq(ctx: Context<IncreaseLiq>, amount: u64) -> Result<()> {
         sale_seeds,
     );
 
-    let _ = raydium_cp_swap::cpi::swap_base_input(cpi_context, amount, 0);
-    
+    let _ = raydium_cp_swap::cpi::swap_base_input(cpi_context, tokens_amount_in, 0);
+
+    msg!("deposit of all liquidity from the sale into the pool");
     let cpi_accounts = raydium_cp_swap::cpi::accounts::Deposit {
         owner: ctx.accounts.sale.to_account_info(),
         authority: ctx.accounts.raydium_authority.to_account_info(),
@@ -247,14 +262,14 @@ pub fn increase_liq(ctx: Context<IncreaseLiq>, amount: u64) -> Result<()> {
     let vault_1: u64; 
     {
         let mut pool_data: &[u8] = &ctx.accounts.pool_state.try_borrow_data()?;
-        let mut target_data: &[u8] = &ctx.accounts.target_token_vault.try_borrow_data()?;
-        let mut payment_data: &[u8] = &ctx.accounts.payment_token_vault.try_borrow_data()?;
 
         let pool = raydium_cp_swap::accounts::PoolState::try_deserialize(&mut pool_data)?;
 
+        let (target_amount, payment_amount) = get_current_liquidity(
+            &ctx.accounts.target_token_vault.try_borrow_data()?,
+            &ctx.accounts.payment_token_vault.try_borrow_data()?,
+        )?;
         lp_supply = pool.lp_supply;
-        let target_amount = SplTokenAccount::try_deserialize(&mut target_data)?.amount;
-        let payment_amount = SplTokenAccount::try_deserialize(&mut payment_data)?.amount;
 
         vault_0 = (if is_target_token_less {
             target_amount
@@ -319,4 +334,57 @@ pub fn trading_tokens_to_lp_tokens(
         .checked_div(total_amount_in_pool_token_1)?;
     
     Some(lp_token_amount_0.min(lp_token_amount_1))
+}
+
+fn get_current_liquidity(target_data: &[u8], payment_data: &[u8]) -> Result<(u64, u64)> {
+    let mut target_data = target_data;
+    let mut payment_data = payment_data;
+
+    let target_amount  = SplTokenAccount::try_deserialize(&mut target_data)?.amount;
+    let payment_amount = SplTokenAccount::try_deserialize(&mut payment_data)?.amount;
+
+    Ok((target_amount, payment_amount))
+}
+
+pub fn calculate_amount_in(
+    token_liq_now: u128,
+    usdc_liq_now: u128,
+    target_price: u128,
+    target_token_decimals: u8,
+) -> Option<u64> {
+    let sqrt_precision: u128 = 1_000_00;
+    let target_token_precision = 10u128.checked_pow(target_token_decimals.into())?;
+
+    let current_price = usdc_liq_now.checked_mul(target_token_precision)?
+        .checked_div(token_liq_now)?;
+
+    let intermediate_value = current_price.checked_mul(sqrt_precision.checked_pow(2)?)?
+        .checked_div(target_price)?;
+
+    let mul_to = sqrt(intermediate_value)?;
+
+    let mut amount_in = token_liq_now.checked_mul(mul_to)?
+        .checked_div(sqrt_precision)?
+        .checked_sub(token_liq_now)?;
+
+    amount_in = amount_in.checked_mul(99)?
+        .checked_div(100)?;
+
+    Some(amount_in as u64)
+}
+
+pub fn sqrt(value: u128) -> Option<u128> {
+    if value == 0 {
+        return Some(0);
+    }
+    if value <= 3 {
+        return Some(1);
+    }
+    let mut z = value;
+    let mut x = value / 2 + 1;
+    while x < z {
+        z = x;
+        x = (value / x + x) / 2;
+    }
+    Some(z)
 }
