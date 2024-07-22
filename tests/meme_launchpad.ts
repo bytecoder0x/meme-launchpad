@@ -636,7 +636,7 @@ describe("meme_launchpad", () => {
   
       await provider.sendAndConfirm(transaction, [wallet.payer]);
   
-      const amountPaymentToken = 10000000000 * 10 ** 8;
+      const amountPaymentToken = 100_000_000_00 * 10 ** 8;
       await mintTokens(purshaseAddresses.userPaymentTokenAccount, paymentToken.publicKey, amountPaymentToken);
   
       await program.methods.buyToken(
@@ -686,10 +686,8 @@ describe("meme_launchpad", () => {
       const ata = await createATA(user.publicKey, [{user: user.publicKey, mint: ad.lpMint, token_program: TOKEN_PROGRAM_ID}]);
       await provider.sendAndConfirm(ata, [user]);
       
-      
       const isTargetTokenLess = Buffer.compare(mint.publicKey.toBuffer(), paymentToken.publicKey.toBuffer()) <= 0;
   
-      
       // cp_swap_program.m
       // 500 = x* 5000/ 150 = 
 
@@ -708,41 +706,51 @@ describe("meme_launchpad", () => {
       // 000000000
 
       // 1350
+      // 1502_504_173_623
+      // 149_960_000_00
+      // 5000_000_000_00
+      // 450_000_000_00
+      // 500_000_000_000
 
-
-      console.log('Lp supply_0:' +  (await cp_swap_program.account.poolState.fetch(ad.poolState)).lpSupply.toString( )); 
+      console.log('Lp supply_0:' +  (await cp_swap_program.account.poolState.fetch(ad.poolState)).lpSupply.toNumber() / 10**9); 
       console.log("Sale Payment token (before): ", (await provider.connection.getTokenAccountBalance(ad.salePaymentTokenAccount)).value.uiAmount);
       console.log("Sale Target token: (before):", (await provider.connection.getTokenAccountBalance(ad.saleTargetTokenAccount)).value.uiAmount);
       console.log("Vault Payment token (before): ", (await provider.connection.getTokenAccountBalance(ad.paymentTokenVault)).value.uiAmount);
       console.log("Vault Target token (before): ", (await provider.connection.getTokenAccountBalance(ad.targetTokenVault)).value.uiAmount);
       // await swap()
 
+      const tokenLiqNow = 50_000_000_00
+      const usdcLiqNow = 4500_000_000_000
+      const targetPrice = 10_000_000_000
+      
+      const price = usdcLiqNow * 1_000_000_00 / tokenLiqNow;
+      const mulTo = Math.sqrt(price / targetPrice);
+      const tokensToBuy = 50_000_000_00 * mulTo - tokenLiqNow;
+      
+      // 49_850_000_0
       let swapTokensAmount = new BN(100).mul(new BN(10).pow(new BN(token_params.decimals)));
-      // let lpTokensAmount = new BN(300).mul(new BN(10).pow(new BN(9)));
+      // // let lpTokensAmount = new BN(300).mul(new BN(10).pow(new BN(9)));
       const inst = await program.methods.increaseLiq(
-        swapTokensAmount,
-        new BN(
-          // 320000000000
-          349000000000
-        )
+        new BN(tokensToBuy)
         // lpTokensAmount
       ).accounts({
         ...closeSaleAddresses
       }).signers([wallet.payer]).instruction();
 
-      
-      const txl = await createAndSendV0Tx(provider, [inst], wallet.payer)
+      const txl = await createAndSendV0Tx(provider, [inst], wallet.payer);
+      // console.log('Pool State ', (await cp_swap_program.account.poolState.fetch(closeSaleAddresses.poolState)).protocolFeesToken0); 
+      // console.log('Pool State ', (await cp_swap_program.account.targetToken.)); 
       console.log("Sale Payment token (after): ", (await provider.connection.getTokenAccountBalance(closeSaleAddresses.salePaymentTokenAccount)).value.uiAmount);
       console.log("Sale Target token (after): ", (await provider.connection.getTokenAccountBalance(closeSaleAddresses.saleTargetTokenAccount)).value.uiAmount);
       console.log("Vault Payment token (after): ", (await provider.connection.getTokenAccountBalance(ad.paymentTokenVault)).value.uiAmount);
       console.log("Vault Target token (after): ", (await provider.connection.getTokenAccountBalance(ad.targetTokenVault)).value.uiAmount);
       await swap()
-      console.log('Lp supply_0:' +  (await cp_swap_program.account.poolState.fetch(ad.poolState)).lpSupply.toString( )); 
+      console.log('Lp supply_0:' +  (await cp_swap_program.account.poolState.fetch(ad.poolState)).lpSupply.toNumber() / 10**9); 
          
-      if(txl){
-        const e = await provider.connection.getParsedTransaction(txl, {commitment: 'confirmed', maxSupportedTransactionVersion: 0})
-        parseEvents(cp_swap_program, e.meta.logMessages);
-      } 
+      // if(txl){
+      //   const e = await provider.connection.getParsedTransaction(txl, {commitment: 'confirmed', maxSupportedTransactionVersion: 0})
+      //   parseEvents(cp_swap_program, e.meta.logMessages);
+      // } 
       
     })
 

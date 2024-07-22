@@ -1,12 +1,9 @@
 use anchor_lang::prelude::*;
 use anchor_spl::{
-    associated_token::{self, AssociatedToken}, token::{Token, TokenAccount as SplTokenAccount}, token_interface::{transfer_checked, Mint, TokenAccount, TokenInterface, TransferChecked}
+    associated_token::AssociatedToken, token::{Token, TokenAccount as SplTokenAccount}, token_interface::{Mint, TokenAccount, TokenInterface}
 };
 
-use crate::{
-    error::MemeLaunchpadError,
-    state::{raydium::raydium_cp_swap::cpi, sale::Sale, token::TokenAuthority},
-};
+use crate::state::{sale::Sale, token::TokenAuthority};
 
 use crate::state::raydium::{
     create_pool_fee_reveiver,
@@ -170,13 +167,11 @@ pub struct IncreaseLiq<'info> {
     pub rent: Sysvar<'info, Rent>,
 }
 
-pub fn increase_liq(ctx: Context<IncreaseLiq>, amount: u64, lp_token_amount: u64) -> Result<()> {
+pub fn increase_liq(ctx: Context<IncreaseLiq>, amount: u64) -> Result<()> {
     let target_key = ctx.accounts.target_token.key();
     let sale_seeds: &[&[&[u8]]] = &[&["sale".as_bytes(), target_key.as_ref(), &[ctx.bumps.sale]]];
     let is_target_token_less = ctx.accounts.target_token.key() < ctx.accounts.payment_token.key();
 
-    // let target_limit = ctx.accounts.sale_target_token_account.amount;
-    
     let cpi_swap_accounts = raydium_cp_swap::cpi::accounts::SwapBaseInput{
         payer: ctx.accounts.sale.to_account_info(),
         authority: ctx.accounts.raydium_authority.to_account_info(),
@@ -199,7 +194,7 @@ pub fn increase_liq(ctx: Context<IncreaseLiq>, amount: u64, lp_token_amount: u64
         sale_seeds,
     );
 
-    raydium_cp_swap::cpi::swap_base_input(cpi_context, amount, 0);
+    let _ = raydium_cp_swap::cpi::swap_base_input(cpi_context, amount, 0);
     
     let cpi_accounts = raydium_cp_swap::cpi::accounts::Deposit {
         owner: ctx.accounts.sale.to_account_info(),
@@ -246,20 +241,6 @@ pub fn increase_liq(ctx: Context<IncreaseLiq>, amount: u64, lp_token_amount: u64
         cpi_accounts,
         sale_seeds,
     );
-    let payment_limit = ctx.accounts.sale_payment_token_account.amount;
-    let target_limit_update = ctx.accounts.sale_target_token_account.amount;
-
-    let maximum_token_0_amount  = if is_target_token_less {
-        target_limit_update
-    } else {
-        payment_limit
-    };
-    let maximum_token_1_amount = if !is_target_token_less {
-        target_limit_update
-    } else {
-        payment_limit
-    };
-
 
     let lp_supply: u64;
     let vault_0: u64;
@@ -274,8 +255,6 @@ pub fn increase_liq(ctx: Context<IncreaseLiq>, amount: u64, lp_token_amount: u64
         lp_supply = pool.lp_supply;
         let target_amount = SplTokenAccount::try_deserialize(&mut target_data)?.amount;
         let payment_amount = SplTokenAccount::try_deserialize(&mut payment_data)?.amount;
-        let fee = 
-
 
         vault_0 = (if is_target_token_less {
             target_amount
@@ -288,9 +267,24 @@ pub fn increase_liq(ctx: Context<IncreaseLiq>, amount: u64, lp_token_amount: u64
         } else {
             payment_amount
         }).checked_sub(pool.protocol_fees_token_1 + pool.fund_fees_token_1).unwrap();
-
-        
     }
+
+    ctx.accounts.sale_payment_token_account.reload()?;
+    ctx.accounts.sale_target_token_account.reload()?;
+
+    let payment_limit = ctx.accounts.sale_payment_token_account.amount;
+    let target_limit_update = ctx.accounts.sale_target_token_account.amount;
+
+    let maximum_token_0_amount  = if is_target_token_less {
+        target_limit_update
+    } else {
+        payment_limit
+    };
+    let maximum_token_1_amount = if !is_target_token_less {
+        target_limit_update
+    } else {
+        payment_limit
+    };
 
     let lp_amount = trading_tokens_to_lp_tokens(
         maximum_token_0_amount as u128,
@@ -300,25 +294,12 @@ pub fn increase_liq(ctx: Context<IncreaseLiq>, amount: u64, lp_token_amount: u64
         vault_1 as u128,     
     ).unwrap();
 
-    msg!("LP Amount: {}", lp_amount);
-    msg!("LP Supply: {}", lp_supply);
-    msg!("Vault 0: {}", vault_0);
-    msg!("Vault 1: {}", vault_1);
-    msg!("Limits: {}, {}", maximum_token_0_amount, maximum_token_1_amount);
-
-
-    raydium_cp_swap::cpi::deposit(
+    let _ = raydium_cp_swap::cpi::deposit(
         cpi_context,
         lp_amount as u64,
-        // lp_token_amount,
-        // 1000000000000000,
-        // 1000000000000000
         maximum_token_0_amount,
-        //.checked_mul(2).unwrap(),
         maximum_token_1_amount
-        //.checked_mul(2).unwrap()
     );
-
 
     Ok(())
 }
@@ -327,34 +308,15 @@ pub fn trading_tokens_to_lp_tokens(
     token_0_amount: u128,
     token_1_amount: u128,
     lp_token_supply: u128,
-    swap_token_0_amount: u128,
-    swap_token_1_amount: u128,
+    total_amount_in_pool_token_0: u128,
+    total_amount_in_pool_token_1: u128,
 ) -> Option<u128> {
-    let mut lp_token_amount_0 = token_0_amount
+    let lp_token_amount_0 = token_0_amount
         .checked_mul(lp_token_supply)?
-        .checked_div(swap_token_0_amount)?;
-    let mut lp_token_amount_1 = token_1_amount
+        .checked_div(total_amount_in_pool_token_0)?;
+    let lp_token_amount_1 = token_1_amount
         .checked_mul(lp_token_supply)?
-        .checked_div(swap_token_1_amount)?;
+        .checked_div(total_amount_in_pool_token_1)?;
     
-    // let token_0_remainder = token_0_amount
-    //     .checked_mul(lp_token_supply)?
-    //     .checked_rem(swap_token_0_amount)?;
-    // if token_0_remainder > 0 && lp_token_amount_0 > 0 {
-    //     lp_token_amount_0 += 1;
-    // }
-    // let token_1_remainder = token_1_amount
-    //     .checked_mul(lp_token_supply)?
-    //     .checked_rem(swap_token_1_amount)?;
-    // if token_1_remainder > 0 && lp_token_amount_1 > 0 {
-    //     lp_token_amount_1 += 1;
-    // }
-    
-    // Return the smaller of the two amounts to ensure both tokens can be exchanged
     Some(lp_token_amount_0.min(lp_token_amount_1))
 }
-
-// 500000000000, 
-// 500000000004
-// 45000000000
-// 4990335556
