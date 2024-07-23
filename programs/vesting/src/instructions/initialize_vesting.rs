@@ -4,12 +4,12 @@ use anchor_spl::{
     token_interface::{TokenInterface, TokenAccount, Mint, TransferChecked, transfer_checked }
 };
 
-use crate::state::vesting::{Vesting, VestingType};
-/// approve, user all amount  token
+use crate::{error::VestingError, state::vesting::{Vesting, VestingType}};
+
 #[derive(Accounts)]
 pub struct InitializeVestingAccount<'info> {
     #[account(
-        init,
+        init_if_needed,
         payer = signer,
         seeds = [user.key.as_ref(), target_token.key().as_ref()],
         bump,
@@ -49,23 +49,27 @@ pub fn initialize_vesting(
 ) -> Result<()> {
     let vesting = &mut ctx.accounts.vesting;
 
-    vesting.start_date = params.start_date;
-    vesting.duration = params.duration;
-    vesting.amount = params.amount;
-    vesting.released_amount = 0;
-    vesting.vesting_type = params.vesting_type;
+    if vesting.amount > 0 {
+        vesting.amount = vesting.amount.checked_add(params.amount).ok_or(VestingError::Overflow)?;
+    } else {
+        vesting.start_date = params.start_date;
+        vesting.duration = params.duration;
+        vesting.amount = params.amount;
+        vesting.released_amount = 0;
+        vesting.vesting_type = params.vesting_type;
 
-    let _ = associated_token::create(CpiContext::new(
-        ctx.accounts.associated_token_program.to_account_info(),
-        associated_token::Create {
-            payer: ctx.accounts.signer.to_account_info(),
-            associated_token: ctx.accounts.vesting_token_account.to_account_info(),
-            authority: ctx.accounts.vesting.to_account_info(),
-            mint: ctx.accounts.target_token.to_account_info(),
-            system_program: ctx.accounts.system_program.to_account_info(),
-            token_program: ctx.accounts.token_program.to_account_info(),
-        },
-    ));
+        let _ = associated_token::create(CpiContext::new(
+            ctx.accounts.associated_token_program.to_account_info(),
+            associated_token::Create {
+                payer: ctx.accounts.signer.to_account_info(),
+                associated_token: ctx.accounts.vesting_token_account.to_account_info(),
+                authority: ctx.accounts.vesting.to_account_info(),
+                mint: ctx.accounts.target_token.to_account_info(),
+                system_program: ctx.accounts.system_program.to_account_info(),
+                token_program: ctx.accounts.token_program.to_account_info(),
+            },
+        ));
+    }
 
     let target_token = ctx.accounts.target_token.key();
 

@@ -34,6 +34,10 @@ pub mod meme_launchpad {
     pub fn transfer_token(ctx: Context<TransferToken>, amount: u64) -> Result<()> {
         return instructions::transfer_token(ctx, amount);
     }
+
+    pub fn increase_liq(ctx: Context<IncreaseLiq>) -> Result<()> {
+        return instructions::increase_liq(ctx);
+    }
 }
 
 #[derive(Accounts)]

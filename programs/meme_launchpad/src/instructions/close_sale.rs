@@ -171,14 +171,11 @@ pub struct CloseSale<'info> {
 }
 
 pub fn close_sale(ctx: Context<CloseSale>) -> Result<()> {
-    // let sale_for_ctx = ctx.accounts.sale.to_account_info();
     let sale = &mut ctx.accounts.sale;
     let curtime = sale.get_time()?;
 
     let target_key = ctx.accounts.target_token.key();
     let sale_seeds: &[&[&[u8]]] = &[&["sale".as_bytes(), target_key.as_ref(), &[ctx.bumps.sale]]];
-
-    // let authority_signer: &[&[&[u8]]] = &[&[b"authority", &[ctx.bumps.authority]]];
 
     require!(
         sale.is_ready_to_close(curtime),
@@ -216,15 +213,18 @@ pub fn close_sale(ctx: Context<CloseSale>) -> Result<()> {
         return Err(MemeLaunchpadError::InvalidPoolState.into());
     }
 
+    let part_target_liq_amount = sale.liq_amount * 100 / 1000;
+    let par_payment_liq_amount = ctx.accounts.sale_payment_token_account.amount * 900 / 1000;
+
     let init_amount_0 = if is_target_token_less {
-        sale.liq_amount
+        part_target_liq_amount
     } else {
-        ctx.accounts.sale_payment_token_account.amount
+        par_payment_liq_amount
     };
     let init_amount_1 = if !is_target_token_less {
-        sale.liq_amount
+        part_target_liq_amount
     } else {
-        ctx.accounts.sale_payment_token_account.amount
+        par_payment_liq_amount
     };
     msg!("Amount 0: {}, amount 1: {}", init_amount_0, init_amount_1);
 
@@ -239,7 +239,7 @@ pub fn close_sale(ctx: Context<CloseSale>) -> Result<()> {
         },
         sale_seeds
     );
-    transfer_checked(target_cpi_ctx, sale.liq_amount, ctx.accounts.target_token.decimals)?;
+    transfer_checked(target_cpi_ctx, part_target_liq_amount, ctx.accounts.target_token.decimals)?;
 
     let payment_cpi_ctx = CpiContext::new_with_signer(
         ctx.accounts.payment_token_program.to_account_info(),
@@ -251,12 +251,8 @@ pub fn close_sale(ctx: Context<CloseSale>) -> Result<()> {
         },
         sale_seeds
     );
-    transfer_checked(payment_cpi_ctx, ctx.accounts.sale_payment_token_account.amount, ctx.accounts.payment_token.decimals)?;
+    transfer_checked(payment_cpi_ctx, par_payment_liq_amount, ctx.accounts.payment_token.decimals)?;
 
-
-    let user_lp = ctx.accounts.user_lp_token.to_account_info();
-
-    // let user_lp = ctx.accounts.user_lp_token.clone();
     let cpi_accounts = raydium_cp_swap::cpi::accounts::Initialize {
         creator: ctx.accounts.signer.to_account_info(),
         amm_config: ctx.accounts.amm_config.to_account_info(),
@@ -340,14 +336,11 @@ pub fn close_sale(ctx: Context<CloseSale>) -> Result<()> {
     //  Transfer lp tokens from user to sale account
     let amount; 
     {
-    
         let mut data: &[u8] = &ctx.accounts.user_lp_token.try_borrow_data()?;
         let res = SplTokenAccount::try_deserialize(&mut data)?;
         amount = res.amount;
     }
     
-    msg!("3");
-    msg!("1");
     let transfer_cpi_ctx = CpiContext::new(
         ctx.accounts.token_program.to_account_info(),
         TransferChecked {
