@@ -338,9 +338,9 @@ export function getTokenAndSaleParams(start: number, end: number, delay: number,
             percentage: 50_00, 
         },
         saleAmount: new BN(1000).mul(new BN(10).pow(new BN(token_params.decimals))),
-        liqAmount: new BN(500).mul(new BN(10).pow(new BN(token_params.decimals))),
+        liqAmount: new BN(1000).mul(new BN(10).pow(new BN(token_params.decimals))),
         maxCap: new BN(1000).mul(new BN(10).pow(new BN(token_params.decimals))),
-        minCap: new BN(1).mul(new BN(10).pow(new BN(token_params.decimals))),
+        minCap: new BN(10).mul(new BN(10).pow(new BN(token_params.decimals))),
       }
 
       return { token_params, sale_params };

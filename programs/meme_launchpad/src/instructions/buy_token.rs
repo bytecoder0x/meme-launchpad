@@ -127,16 +127,18 @@ pub fn buy_token(ctx: Context<BuyToken>, params: BuyTokenParams) -> Result<()> {
     // we want to buy 100 token for 50 usdt
     if params.amount_specified_input {
         amount_in = params.amount;
-        amount_out = amount_in
-            .checked_mul(target_token_decimals)
-            .and_then(|x| x.checked_div(price))
+        amount_out = (amount_in as u128)
+            .checked_mul(target_token_decimals as u128)
+            .and_then(|x| x.checked_div(price as u128))
+            .and_then(|x| x.try_into().ok())
             .ok_or(MemeLaunchpadError::MathOverflow)?;
         // 50 000 000 * 1 000 000 00  = 5 000 000 000 000 000 / 500 000 = 10 000 000 000 - 100 token
     } else {
         amount_out = params.amount;
-        amount_in = amount_out         
-            .checked_mul(price)
-            .and_then(|x| x.checked_div(target_token_decimals)) 
+        amount_in = (amount_out as u128)          
+            .checked_mul(price as u128)
+            .and_then(|x| x.checked_div(target_token_decimals as u128))
+            .and_then(|x| x.try_into().ok()) 
             .ok_or(MemeLaunchpadError::MathOverflow)?;
         // 10 000 000 000 * 500 000 = 5 000 000 000 000 000 / 1 000 000 00 = 50 000 000 - 50 usdc
     }
@@ -153,7 +155,7 @@ pub fn buy_token(ctx: Context<BuyToken>, params: BuyTokenParams) -> Result<()> {
 
     let expected_already_sold = sale.already_sold.checked_add(amount_out).ok_or(MemeLaunchpadError::MathOverflow)?;
     
-    if expected_already_sold >= sale.sale_amount {
+    if expected_already_sold > sale.sale_amount {
         return Err(MemeLaunchpadError::SaleLimitExceeded.into());
     }
 

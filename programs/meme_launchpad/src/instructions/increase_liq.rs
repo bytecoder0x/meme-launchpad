@@ -170,18 +170,20 @@ pub struct IncreaseLiq<'info> {
 pub fn increase_liq(ctx: Context<IncreaseLiq>) -> Result<()> {
     let target_key = ctx.accounts.target_token.key();
     let sale_seeds: &[&[&[u8]]] = &[&["sale".as_bytes(), target_key.as_ref(), &[ctx.bumps.sale]]];
+    let sale = &ctx.accounts.sale;
     let is_target_token_less = ctx.accounts.target_token.key() < ctx.accounts.payment_token.key();
-
+    let curtime = sale.get_time()?;
+    
     let (target_amount, payment_amount) = get_current_liquidity(
         &ctx.accounts.target_token_vault.try_borrow_data()?,
         &ctx.accounts.payment_token_vault.try_borrow_data()?,
     )?;
-    let target_price: u128 = 1_000_000_000;
+    let sale_price = &ctx.accounts.sale.get_sale_price(target_amount, curtime).unwrap();
 
     let tokens_amount_in = calculate_amount_in(
         target_amount as u128,
         payment_amount as u128,
-        target_price,
+        *sale_price as u128,
         ctx.accounts.target_token.decimals,
     ).unwrap();
 
