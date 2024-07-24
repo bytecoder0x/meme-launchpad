@@ -325,6 +325,7 @@ export function getTokenAndSaleParams(start: number, end: number, delay: number,
           sellerLink: "Lihk",
           startTime: new BN(start),
           endTime: new BN(end),
+          closeTime: new BN(end),
           saleDelay: new BN(delay),
         },
         pricing: {

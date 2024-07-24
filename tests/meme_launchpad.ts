@@ -115,7 +115,7 @@ describe.only("meme_launchpad", () => {
   });
 
   it("Should correctly create launchpad", async () => {
-    const start = (Date.now() / 1000);
+    const start = (Date.now() / 1000) + 2;
     const end = start + 10;
     const delay = end + 10;
     const startPrice = new BN(5).mul(new BN(10).pow(new BN(9))); // 5$
@@ -139,14 +139,9 @@ describe.only("meme_launchpad", () => {
 
     expect(saleTargetTokenAccount.value.amount).to.be.eq(sale_params.saleAmount.add(sale_params.liqAmount).toString());
     expect(freeTargetTokenAccount.value.amount).to.be.eq(freeAmount.toString());
-  })
+  });
 
-  it("Should correctly buy tokens", async () => {
-    const params = {
-      amount: new BN(2500).mul(new BN(10).pow(new BN(9))), // 2500$
-      amountSpecifiedInput: true,
-    }
-
+  it("Should prevent buy tokens if sale hasn't start", async () => {
     const ATACreationAddresses = [
       {
         user: user.publicKey,
@@ -167,6 +162,26 @@ describe.only("meme_launchpad", () => {
     );
 
     await provider.sendAndConfirm(transaction, [wallet.payer]);
+
+    const amount = new BN(100).mul(new BN(10).pow(new BN(8)));
+    await expectFail(
+      program.methods.buyToken(
+        {
+          amount: amount,
+          amountSpecifiedInput: true,
+        }
+      ).accounts({ ...purshaseAddresses }).signers([user]).rpc(),
+      "Sale hasn't started"
+    );
+  });
+
+  it("Should correctly buy tokens", async () => {
+    await new Promise((resolve) => setTimeout(resolve, 4000));
+
+    const params = {
+      amount: new BN(2500).mul(new BN(10).pow(new BN(9))), // 2500$
+      amountSpecifiedInput: true,
+    }
 
     const amountPaymentToken = 1_000_000 * (10 ** 9);
     await mintTokens(purshaseAddresses.userPaymentTokenAccount, paymentToken.publicKey, amountPaymentToken);
@@ -215,163 +230,6 @@ describe.only("meme_launchpad", () => {
     expect(Number(salePaymentBalance2.value.amount)).to.be.eq(expectedSalePaymentBalance + Number(params.amount));
   });
 
-  it.skip("Should correctly buy tokens with different payment tokens", async () => {
-    const newPaymentToken = new anchor.web3.Keypair();
-
-    const newSaleAddresses = getCreateSaleAddresses(
-      wallet.publicKey,
-      mint.publicKey,
-      newPaymentToken.publicKey,
-      free_account.publicKey,
-      program.programId
-    );
-
-    const newPurshaseAddresses = getPurshaseAddresses(
-      mint.publicKey,
-      newPaymentToken.publicKey,
-      user2.publicKey,
-      program.programId
-    );
-
-    const params = {
-      amount: new BN(153).mul(new BN(10).pow(new BN(6))), // 15.3 token to buy
-      amountSpecifiedInput: false,
-    }
-
-    await createMint(provider.connection, wallet.payer, wallet.publicKey, wallet.publicKey, 6, newPaymentToken, {},
-      TOKEN_2022_PROGRAM_ID);
-
-      const start = (Date.now() / 1000);
-      const end = start + 10;
-      const delay = end + 10;
-  
-      const startPrice = new BN(78).mul(new BN(10).pow(new BN(4))); // price per token 0.78$
-
-      const { token_params, sale_params } = getTokenAndSaleParams(start, end, delay, startPrice);
-  
-      const tx = await program.methods.createLaunchpad({
-        freeAccount: free_account.publicKey,
-        freeAmount: new BN(588).mul(new BN(10).pow(new BN(token_params.decimals))),
-        createTokenParams: token_params,
-        createSaleParams: sale_params,
-      }).accounts({
-        ...newSaleAddresses
-      })
-        .preInstructions([additionalComputeBudgetInstruction])
-        .signers([wallet.payer, mint]).rpc().catch(e => console.error(e));
-
-    const ATACreationAddresses = [
-      {
-        user: user2.publicKey,
-        mint: newPaymentToken.publicKey
-      }, 
-      {
-        user: user2.publicKey,
-        mint: mint.publicKey
-      }
-    ]
-
-    const transaction = (await createATA(wallet.publicKey, ATACreationAddresses)).add(
-        SystemProgram.transfer({
-            fromPubkey: wallet.publicKey,
-            toPubkey: user2.publicKey,
-            lamports: 1000000000, // 1 sol
-        })
-    );
-    
-    await provider.sendAndConfirm(transaction, [wallet.payer]);
-
-    const amountPaymentToken = 10000000000 * (10 ** 9);
-    await mintTokens(newPurshaseAddresses.userPaymentTokenAccount, newPaymentToken.publicKey, amountPaymentToken);
-
-    await program.methods.buyToken(
-      params
-    ).accounts({
-      ...newPurshaseAddresses,
-    }).signers([user2]).rpc().catch(e => console.error(e));
-
-    const totalAmountTargetToken = Number(params.amount);
-    const expectedVestingBalance = totalAmountTargetToken * 50_00 / 100_00; // 50% from total amount
-    const expectedUserBalance = totalAmountTargetToken - expectedVestingBalance;
-    const expectedSalePaymentBalance = Number(params.amount.mul(startPrice).div(new BN(10).pow(new BN(8))));
-    const userBalance = await provider.connection.getTokenAccountBalance(newPurshaseAddresses.userTargetTokenAccount);
-    const vestingBalance = await provider.connection.getTokenAccountBalance(newPurshaseAddresses.vestingTargetTokenAccount);
-    const salePaymentBalance = await provider.connection.getTokenAccountBalance(newPurshaseAddresses.salePaymentTokenAccount);
-
-    expect(Number(userBalance.value.amount)).to.be.eq(expectedUserBalance);
-    expect(Number(vestingBalance.value.amount)).to.be.eq(expectedVestingBalance);
-    expect(Number(salePaymentBalance.value.amount)).to.be.eq(expectedSalePaymentBalance);
-  });
-
-  it.skip('Should prevent incorrect sale timerange', async () => {
-    const newMint = anchor.web3.Keypair.generate();
-
-    const start = (Date.now() / 1000) + 20;
-    const end = start + 20;
-    const delay = end + 20;
-
-    const { token_params, sale_params } = getTokenAndSaleParams(start, end, delay, new BN(5).mul(new BN(10).pow(new BN(8))));
-
-    const tx = await program.methods.createLaunchpad({
-      freeAccount: free_account.publicKey,
-      freeAmount: new BN(588).mul(new BN(10).pow(new BN(token_params.decimals))),
-      createTokenParams: token_params,
-      createSaleParams: sale_params,
-    }).accounts({ ...saleAddresses })
-      .preInstructions([additionalComputeBudgetInstruction])
-      .signers([wallet.payer, newMint]).rpc().catch(e => console.error(e));
-
-
-    const purshaseAddresses = getPurshaseAddresses(
-      newMint.publicKey,
-      paymentToken.publicKey,
-      user.publicKey,
-      program.programId
-    );
-
-    const ATACreationAddresses = [
-      {
-        user: user.publicKey,
-        mint: newMint.publicKey,
-      }
-    ]
-
-    const transaction = await createATA(wallet.publicKey, ATACreationAddresses)
-    await provider.sendAndConfirm(transaction, [wallet.payer])
-
-    const amount = new BN(100).mul(new BN(10).pow(new BN(8)));
-    await expectFail(
-      program.methods.buyToken(
-        {
-          amount: amount,
-          amountSpecifiedInput: true,
-        }
-      ).accounts({ ...purshaseAddresses }).signers([user]).rpc(),
-      "Sale hasn't started"
-    )
-
-    await new Promise((resolve) => setTimeout(resolve, 20000));
-
-    await program.methods.buyToken(
-      {
-        amount: amount,
-        amountSpecifiedInput: true,
-      }
-    ).accounts({ ...purshaseAddresses }).signers([user]).rpc().catch(e => console.error(e));
-
-    await new Promise((resolve) => setTimeout(resolve, 20000));
-
-    await expectFail(
-      program.methods.buyToken(
-        {
-          amount: amount,
-          amountSpecifiedInput: true,
-        }
-      ).accounts({ ...purshaseAddresses }).signers([user]).rpc(),
-      "Sale has been ended"
-    )
-  })
-
   it.skip('Should correctly transfer tokens from free account', async () => {
     const tokenAmount = 100 * (10 ** 8);
 
@@ -414,9 +272,7 @@ describe.only("meme_launchpad", () => {
     );
   });
 
-  it('Should correctly close sale', async () => {
-    await new Promise((resolve) => setTimeout(resolve, 10000));
-
+  it("Should prevent close sale if it isn't ready", async () => {
     const ATACreationAddresses = [
       {
         user: wallet.publicKey,
@@ -427,6 +283,33 @@ describe.only("meme_launchpad", () => {
     const ataTransaction = await createATA(wallet.publicKey, ATACreationAddresses);
     await provider.sendAndConfirm(ataTransaction, [wallet.payer]);
 
+    await expectFail(
+          program.methods
+        .closeSale()
+        .accounts({...closeSaleAddresses,})
+        .preInstructions([additionalComputeBudgetInstruction])
+        .signers([wallet.payer])
+        .rpc(),
+          "Sale is not ready to close"
+        );
+  });
+
+  it("Should prevent buy tokens if sale has been ended", async () => {
+    await new Promise((resolve) => setTimeout(resolve, 8000));
+
+    const amount = new BN(100).mul(new BN(10).pow(new BN(8)));
+    await expectFail(
+      program.methods.buyToken(
+        {
+          amount: amount,
+          amountSpecifiedInput: true,
+        }
+      ).accounts({ ...purshaseAddresses }).signers([user]).rpc(),
+      "Sale has been ended"
+    );
+  });
+
+  it('Should correctly close sale', async () => {
     const saleAccountInfo = await program.account.sale.fetch(closeSaleAddresses.sale);
     const salePaymentBalance = await provider.connection.getTokenAccountBalance(closeSaleAddresses.salePaymentTokenAccount);
     const liquidityTargetToken = Number(saleAccountInfo.liqAmount) * 100 / 1000;
@@ -447,7 +330,7 @@ describe.only("meme_launchpad", () => {
 
     expect(Number(targetTokenVaultBalance.value.amount)).to.be.eq(liquidityTargetToken);
     expect(Number(paymentTokenVaultBalance.value.amount)).to.be.eq(liquidityPaymentToken);
-  })
+  });
 
   it("Should correctly thaw account", async () => {
     await program.methods.thawToken().accounts({
@@ -493,7 +376,7 @@ describe.only("meme_launchpad", () => {
     expect(Number(vestingBalanceAfterClaim.value.amount)).to.be.eq(Number(vestingBalanceBeforeClaim.value.amount) - halfTokenAmountInVesting);
   });
 
-  it("Should prevent sniper bots", async () => {
+  it("Should prevent attacks from sniper bots", async () => {
     const bot = new anchor.web3.Keypair();
     const ATACreationAddresses = [
       {
@@ -523,7 +406,7 @@ describe.only("meme_launchpad", () => {
       TOKEN_2022_PROGRAM_ID
     );
 
-    // The price on sale was $5, now the price on radium is 45$;
+    // The price on sale was $5, now the price on radium is 45$
     // So, we should receive not 9 tokens but 1 when buying for $45
     const amountIn = 45 * (10 ** 9);
     await mintTokens(botPaymentATA, paymentToken.publicKey, amountIn);
@@ -557,7 +440,6 @@ describe.only("meme_launchpad", () => {
     expect(Number(finalBotPaymentBalance.value.amount)).to.be.eq(0);
     // We round since bot receive about 0.988 tokens due to the small amount of liquidity in the pool
     expect(Math.round(Number(finalBotTargetBalance.value.uiAmount))).to.be.eq(1);
-
   });
 
 
@@ -581,7 +463,7 @@ describe.only("meme_launchpad", () => {
     expect(Number(userBalanceBeforeBurn.value.amount)).to.be.eq(Number(userBalanceAfterBurn.value.amount) + tokenAmount);
   });
 
-  it("Should correctly increase liquidity and equalize the price of radium", async () => {
+  it("Should correctly increase liquidity and equalize the price on radium", async () => {
       const lpSupplyBefore = (await cp_swap_program.account.poolState.fetch(closeSaleAddresses.poolState)).lpSupply.toNumber(); 
       const salePaymentBalanceBefore = (await provider.connection.getTokenAccountBalance(closeSaleAddresses.salePaymentTokenAccount)).value.amount;
       const saleTargetBalanceBefore = (await provider.connection.getTokenAccountBalance(closeSaleAddresses.saleTargetTokenAccount)).value.amount;
@@ -617,18 +499,54 @@ describe.only("meme_launchpad", () => {
 
       const newLpAmount = Math.min(lpSaleTargetToken, lpSalePaymentToken);
 
-      const lpDelta = 2 * (10 ** 9);
-      const paymentDelta = 1 * (10 ** 9);
-      const targetDelta = 10 * (10 ** 8);
+      const lpDelta = 2 * (10 ** 9); // 2
+      const paymentDelta = 3 * (10 ** 9); // 3
+      const targetDelta = 10 * (10 ** 8); // 10
+      const priceDelta = 1 * (10 ** 8); // 0.1
 
       const saleAccountInfo = await program.account.sale.fetch(closeSaleAddresses.sale);
       const paymnetAmountFromBot = 45 * (10 ** 9);
       const expectedVaultTargetBalance = (startPrice * Number(saleAccountInfo.alreadySold) / 10 ** 8) + paymnetAmountFromBot;
-      
+      const radiumPrice = Number(vaultPaymentBalanceAfter) * 10 ** 8 / Number(vaultTargetBalanceAfter);
+
       expect(lpSupplyAfter).to.be.closeTo(newLpAmount + lpSupplyBefore, lpDelta);
       expect(Number(saleTargetBalanceAfter)).to.be.closeTo(0, targetDelta);
       expect(Number(salePaymentBalanceAfter)).to.be.closeTo(0, paymentDelta);
       expect(Number(vaultTargetBalanceAfter)).to.be.closeTo(Number(saleAccountInfo.alreadySold), targetDelta);
       expect(Number(vaultPaymentBalanceAfter)).to.be.closeTo(expectedVaultTargetBalance, paymentDelta);
+      expect(radiumPrice).to.be.closeTo(startPrice, priceDelta);
     });
+
+    it("Should correctly swap tokens after increase liquidity for correctly price", async () => {
+      const price = 5 * (10 ** 9);
+      const tokenAmount = new BN(100).mul(new BN(10).pow(new BN(8))); // 100 tokens
+      const minExpectedPaymnetAmount = new BN(450).mul(new BN(10).pow(new BN(9))); // price 5$ per one token, but 450 USDC since liq in pool is small
+
+      const userTargetBalanceBefore = (await provider.connection.getTokenAccountBalance(purshaseAddresses.userTargetTokenAccount)).value.amount;
+      const userPaymentBalanceBefore = (await provider.connection.getTokenAccountBalance(purshaseAddresses.userPaymentTokenAccount)).value.amount;
+
+      await cp_swap_program.methods.swapBaseInput(
+        tokenAmount, new BN(minExpectedPaymnetAmount)
+      ).accounts({
+        payer: user.publicKey,
+        authority: closeSaleAddresses.raydiumAuthority,
+        ammConfig: closeSaleAddresses.ammConfig,
+        poolState: closeSaleAddresses.poolState,
+        inputTokenAccount: purshaseAddresses.userTargetTokenAccount,
+        outputTokenAccount: purshaseAddresses.userPaymentTokenAccount,
+        inputVault: closeSaleAddresses.targetTokenVault,
+        outputVault: closeSaleAddresses.paymentTokenVault,
+        inputTokenProgram: TOKEN_2022_PROGRAM_ID,
+        outputTokenProgram: TOKEN_2022_PROGRAM_ID,
+        inputTokenMint: mint.publicKey,
+        outputTokenMint: paymentToken.publicKey,
+        observationState: closeSaleAddresses.observationState,
+      }).signers([user]).rpc().catch(e => console.error(e));
+
+      const userTargetBalanceAfter = (await provider.connection.getTokenAccountBalance(purshaseAddresses.userTargetTokenAccount)).value.amount;
+      const userPaymentBalanceAfter = (await provider.connection.getTokenAccountBalance(purshaseAddresses.userPaymentTokenAccount)).value.amount;
+
+      expect(Number(userTargetBalanceAfter)).to.be.eq(Number(userTargetBalanceBefore) - Number(tokenAmount));
+      expect(Number(userPaymentBalanceAfter)).to.be.closeTo(Number(userPaymentBalanceBefore) + Number(minExpectedPaymnetAmount), 50 * (10 ** 9));
+    })
 });

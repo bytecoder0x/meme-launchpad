@@ -3,7 +3,7 @@ use anchor_spl::{
     associated_token::AssociatedToken, token::{Token, TokenAccount as SplTokenAccount}, token_interface::{Mint, TokenAccount, TokenInterface}
 };
 
-use crate::state::{sale::Sale, token::TokenAuthority};
+use crate::{error::MemeLaunchpadError, state::{sale::Sale, token::TokenAuthority}};
 
 use crate::state::raydium::{
     create_pool_fee_reveiver,
@@ -173,7 +173,10 @@ pub fn increase_liq(ctx: Context<IncreaseLiq>) -> Result<()> {
     let sale = &ctx.accounts.sale;
     let is_target_token_less = ctx.accounts.target_token.key() < ctx.accounts.payment_token.key();
     let curtime = sale.get_time()?;
-    
+    let pool = get_pool(&ctx.accounts.pool_state.try_borrow_data()?)?;
+
+    require!(pool.status == 0, MemeLaunchpadError::PoolNotInitialized);
+
     let (target_amount, payment_amount) = get_current_liquidity(
         &ctx.accounts.target_token_vault.try_borrow_data()?,
         &ctx.accounts.payment_token_vault.try_borrow_data()?,
@@ -263,9 +266,7 @@ pub fn increase_liq(ctx: Context<IncreaseLiq>) -> Result<()> {
     let vault_0: u64;
     let vault_1: u64; 
     {
-        let mut pool_data: &[u8] = &ctx.accounts.pool_state.try_borrow_data()?;
-
-        let pool = raydium_cp_swap::accounts::PoolState::try_deserialize(&mut pool_data)?;
+        let pool = get_pool(&ctx.accounts.pool_state.try_borrow_data()?)?;
 
         let (target_amount, payment_amount) = get_current_liquidity(
             &ctx.accounts.target_token_vault.try_borrow_data()?,
@@ -338,7 +339,13 @@ pub fn trading_tokens_to_lp_tokens(
     Some(lp_token_amount_0.min(lp_token_amount_1))
 }
 
-fn get_current_liquidity(target_data: &[u8], payment_data: &[u8]) -> Result<(u64, u64)> {
+pub fn get_pool(mut pool_data: &[u8]) -> Result<raydium_cp_swap::accounts::PoolState> {
+    let pool = raydium_cp_swap::accounts::PoolState::try_deserialize(&mut pool_data)?;
+
+    Ok(pool)
+}
+
+pub fn get_current_liquidity(target_data: &[u8], payment_data: &[u8]) -> Result<(u64, u64)> {
     let mut target_data = target_data;
     let mut payment_data = payment_data;
 

@@ -88,6 +88,8 @@ pub enum MemeLaunchpadError {
     MustBeSingleInstruction,
     #[msg("Sale is not ready to close")]
     SaleNotReadyToClose,
+    #[msg("Pool is not initialized")]
+    PoolNotInitialized, 
     #[msg("Invalid pool state")]
     InvalidPoolState,
     #[msg("Amount out is below the minimum cap")]
