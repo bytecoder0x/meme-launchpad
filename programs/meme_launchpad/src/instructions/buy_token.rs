@@ -18,12 +18,6 @@ use crate::{
     state::{sale::Sale, token::TokenAuthority},
 };
 
-#[account]
-pub struct User {
-    pub total_purchased: u64,
-}
-
-
 #[derive(Accounts)]
 pub struct BuyToken<'info> {
     #[account(mut)]
@@ -41,15 +35,6 @@ pub struct BuyToken<'info> {
         bump
     )]
     pub authority: Account<'info, TokenAuthority>,
-
-    #[account(
-        init_if_needed,
-        payer = signer,
-        seeds = [signer.key().as_ref(), sale.key().as_ref()],
-        bump,
-        space = 8 + 8 
-    )]
-    pub user: Account<'info, User>,
 
     pub target_token: InterfaceAccount<'info, Mint>,
 
@@ -110,7 +95,6 @@ pub struct BuyTokenParams {
 
 pub fn buy_token(ctx: Context<BuyToken>, params: BuyTokenParams) -> Result<()> {
     let sale = &mut ctx.accounts.sale;
-    let user = &mut ctx.accounts.user;
     let curtime = sale.get_time()?;
 
     require!(sale.is_started(curtime), MemeLaunchpadError::SaleNotStarted);
@@ -147,7 +131,8 @@ pub fn buy_token(ctx: Context<BuyToken>, params: BuyTokenParams) -> Result<()> {
         return Err(MemeLaunchpadError::BelowMinCap.into());
     }
     
-    let user_new_total_purchased = user.total_purchased.checked_add(amount_out).ok_or(MemeLaunchpadError::MathOverflow)?;
+    let user_total_purchased = &ctx.accounts.user_target_token_account.amount;
+    let user_new_total_purchased = user_total_purchased.checked_add(amount_out).ok_or(MemeLaunchpadError::MathOverflow)?;
     
     if sale.max_cap != 0 && user_new_total_purchased > sale.max_cap {
         return Err(MemeLaunchpadError::AboveMaxCap.into());
@@ -270,7 +255,6 @@ pub fn buy_token(ctx: Context<BuyToken>, params: BuyTokenParams) -> Result<()> {
     );
     freeze_account(froze_cpi_context)?;
 
-    user.total_purchased = user_new_total_purchased;
     sale.already_sold = sale.already_sold
         .checked_add(amount_out)
         .ok_or(MemeLaunchpadError::MathOverflow)?;
