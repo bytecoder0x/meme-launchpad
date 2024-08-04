@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 use anchor_spl::{
-    associated_token::AssociatedToken, token::{Token, TokenAccount as SplTokenAccount}, token_interface::{Mint, TokenAccount, TokenInterface}
+    associated_token::AssociatedToken, token::{Token, TokenAccount as SplTokenAccount}, token_interface::{burn, Burn, Mint, TokenAccount, TokenInterface}
 };
 
 use crate::{error::MemeLaunchpadError, state::{sale::Sale, token::TokenAuthority}};
@@ -216,7 +216,7 @@ pub fn increase_liq(ctx: Context<IncreaseLiq>) -> Result<()> {
     let _ = raydium_cp_swap::cpi::swap_base_input(cpi_context, tokens_amount_in, 0);
 
     msg!("deposit of all liquidity from the sale into the pool");
-    let cpi_accounts = raydium_cp_swap::cpi::accounts::Deposit {
+    let cpi_deposit_accounts = raydium_cp_swap::cpi::accounts::Deposit {
         owner: ctx.accounts.sale.to_account_info(),
         authority: ctx.accounts.raydium_authority.to_account_info(),
         pool_state: ctx.accounts.pool_state.to_account_info(),
@@ -258,13 +258,13 @@ pub fn increase_liq(ctx: Context<IncreaseLiq>) -> Result<()> {
 
     let cpi_context = CpiContext::new_with_signer(
         ctx.accounts.cp_swap_program.to_account_info(),
-        cpi_accounts,
+        cpi_deposit_accounts,
         sale_seeds,
     );
 
     let lp_supply: u64;
     let vault_0: u64;
-    let vault_1: u64; 
+    let vault_1: u64;
     {
         let pool = get_pool(&ctx.accounts.pool_state.try_borrow_data()?)?;
 
@@ -318,6 +318,44 @@ pub fn increase_liq(ctx: Context<IncreaseLiq>) -> Result<()> {
         maximum_token_0_amount,
         maximum_token_1_amount
     );
+
+    msg!("burn excess of the target token");
+    let cpi_burn_target_token_accounts = Burn {
+        mint: ctx.accounts.target_token.to_account_info(),
+        from: ctx.accounts.sale_target_token_account.to_account_info(),
+        authority: sale.to_account_info(),
+    };
+
+    let cpi_context = CpiContext::new_with_signer(
+        ctx.accounts.target_token_program.to_account_info(),
+        cpi_burn_target_token_accounts,
+        sale_seeds,
+    );
+
+    ctx.accounts.sale_target_token_account.reload()?;
+    let amount_to_burn = ctx.accounts.sale_target_token_account.amount;
+    let _ = burn(cpi_context, amount_to_burn);
+
+    msg!("burn excess of the lp token");
+    let cpi_burn_lp_token_accounts = Burn {
+        mint: ctx.accounts.lp_mint.to_account_info(),
+        from: ctx.accounts.sale_lp_token.to_account_info(),
+        authority: sale.to_account_info(),
+    };
+
+    let cpi_context = CpiContext::new_with_signer(
+        ctx.accounts.token_program.to_account_info(),
+        cpi_burn_lp_token_accounts,
+        sale_seeds,
+    );
+
+    let amount_to_burn; 
+    {
+        let mut sale_lp_token_data: &[u8] = &ctx.accounts.sale_lp_token.try_borrow_data()?;
+        amount_to_burn = SplTokenAccount::try_deserialize( &mut sale_lp_token_data)?.amount;
+    }
+
+    let _ = burn(cpi_context, amount_to_burn);
 
     Ok(())
 }

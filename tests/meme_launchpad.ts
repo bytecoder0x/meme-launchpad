@@ -482,17 +482,22 @@ describe.only("meme_launchpad", () => {
       const vaultTargetBalanceAfterSwap  = Number(vaultTargetBalanceBefore) + amountIn;
 
       const tx = await program.methods.increaseLiq(
-      ).accounts({
-        ...closeSaleAddresses
-      }).signers([wallet.payer]).instruction();
+        ).accounts({
+          ...closeSaleAddresses
+        })
+        .preInstructions([additionalComputeBudgetInstruction])
+        .signers([wallet.payer])
+        .rpc()
+        .catch((e) => console.error(e));
 
-      await createAndSendV0Tx(provider, [tx], wallet.payer, undefined, cp_swap_program);
+      // await createAndSendV0Tx(provider, [tx], wallet.payer, undefined, cp_swap_program);
 
       const lpSupplyAfter = (await cp_swap_program.account.poolState.fetch(closeSaleAddresses.poolState)).lpSupply.toNumber(); 
       const salePaymentBalanceAfter = (await provider.connection.getTokenAccountBalance(closeSaleAddresses.salePaymentTokenAccount)).value.amount;
       const saleTargetBalanceAfter = (await provider.connection.getTokenAccountBalance(closeSaleAddresses.saleTargetTokenAccount)).value.amount;
       const vaultPaymentBalanceAfter = (await provider.connection.getTokenAccountBalance(closeSaleAddresses.paymentTokenVault)).value.amount;
       const vaultTargetBalanceAfter = (await provider.connection.getTokenAccountBalance(closeSaleAddresses.targetTokenVault)).value.amount;
+      const saleLpBalanceAfter = (await provider.connection.getTokenAccountBalance(closeSaleAddresses.saleLpToken)).value.amount;
 
       const lpSaleTargetToken = (saleTargetBalanceAfterSwap * lpSupplyBefore) / vaultTargetBalanceAfterSwap;
       const lpSalePaymentToken = (salePaymentBalanceAfterSwap * lpSupplyBefore) / vaultPaymentBalanceAfterSwap;
@@ -510,7 +515,8 @@ describe.only("meme_launchpad", () => {
       const radiumPrice = Number(vaultPaymentBalanceAfter) * 10 ** 8 / Number(vaultTargetBalanceAfter);
 
       expect(lpSupplyAfter).to.be.closeTo(newLpAmount + lpSupplyBefore, lpDelta);
-      expect(Number(saleTargetBalanceAfter)).to.be.closeTo(0, targetDelta);
+      expect(Number(saleTargetBalanceAfter)).to.be.eq(0);
+      expect(Number(saleLpBalanceAfter)).to.be.eq(0);
       expect(Number(salePaymentBalanceAfter)).to.be.closeTo(0, paymentDelta);
       expect(Number(vaultTargetBalanceAfter)).to.be.closeTo(Number(saleAccountInfo.alreadySold), targetDelta);
       expect(Number(vaultPaymentBalanceAfter)).to.be.closeTo(expectedVaultTargetBalance, paymentDelta);

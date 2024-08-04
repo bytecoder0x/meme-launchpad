@@ -1,3 +1,5 @@
+use std::ops::Mul;
+
 use anchor_lang::prelude::*;
 use anchor_spl::{
     associated_token::{self, AssociatedToken}, token::{Token, TokenAccount as SplTokenAccount}, token_interface::{transfer_checked, Mint, TokenAccount, TokenInterface, TransferChecked}
@@ -173,13 +175,27 @@ pub struct CloseSale<'info> {
 pub fn close_sale(ctx: Context<CloseSale>) -> Result<()> {
     let sale = &mut ctx.accounts.sale;
     let curtime = sale.get_time()?;
-
     let target_key = ctx.accounts.target_token.key();
     let sale_seeds: &[&[&[u8]]] = &[&["sale".as_bytes(), target_key.as_ref(), &[ctx.bumps.sale]]];
 
     require!(
         sale.is_ready_to_close(curtime),
         MemeLaunchpadError::SaleNotReadyToClose
+    );
+
+    let tokens_sold_percentage = sale
+        .already_sold
+        .checked_mul(100_00 as u64)
+        .and_then(|x| x.checked_div(sale.sale_amount))
+        .ok_or(MemeLaunchpadError::MathOverflow)?;
+
+    if tokens_sold_percentage >= 75_00 {
+        sale.sale_success = true;
+    }
+
+    require!(
+        sale.sale_success,
+        MemeLaunchpadError::SaleIsNotSuccess
     );
 
     let is_target_token_less = ctx.accounts.target_token.key() < ctx.accounts.payment_token.key();
@@ -307,7 +323,7 @@ pub fn close_sale(ctx: Context<CloseSale>) -> Result<()> {
         system_program: ctx.accounts.system_program.to_account_info(),
         rent: ctx.accounts.rent.to_account_info(),
     };
-
+    
     let cpi_context = CpiContext::new(
         ctx.accounts.cp_swap_program.to_account_info(),
         cpi_accounts,
@@ -352,5 +368,6 @@ pub fn close_sale(ctx: Context<CloseSale>) -> Result<()> {
     );
 
     transfer_checked(transfer_cpi_ctx, amount, 9)?;
+    
     Ok(())
 }

@@ -96,4 +96,6 @@ pub enum MemeLaunchpadError {
     BelowMinCap,
     #[msg("Amount out is above the maximum cap")]
     AboveMaxCap,
+    #[msg("Sale does not sell a sufficient number of tokens")]
+    SaleIsNotSuccess,
 }
