@@ -43,6 +43,7 @@ describe.only("meme_launchpad", () => {
   const free_account = new anchor.web3.Keypair();
   const user = new anchor.web3.Keypair();
   const user2 = new anchor.web3.Keypair();
+  const investor = new anchor.web3.Keypair();
   const mint = anchor.web3.Keypair.generate();
 
   const additionalComputeBudgetInstruction =
@@ -230,35 +231,66 @@ describe.only("meme_launchpad", () => {
     expect(Number(salePaymentBalance2.value.amount)).to.be.eq(expectedSalePaymentBalance + Number(params.amount));
   });
 
-  it.skip('Should correctly transfer tokens from free account', async () => {
-    const tokenAmount = 100 * (10 ** 8);
+  it('Should correctly transfer tokens from free account', async () => {
+    const ATACreationAddresses = [
+      {
+        user: investor.publicKey,
+        mint: mint.publicKey,
+      }
+    ]
+
+    const transaction = (await createATA(wallet.publicKey, ATACreationAddresses)).add(
+      SystemProgram.transfer({
+        fromPubkey: wallet.publicKey,
+        toPubkey: free_account.publicKey,
+        lamports: 1_000_000_000, // 1 sol
+      })
+    );
+    await provider.sendAndConfirm(transaction, [wallet.payer]);
+
+    const escrowAccount = anchor.web3.PublicKey.findProgramAddressSync(
+      [
+          investor.publicKey.toBuffer(),
+          saleAddresses.sale.toBuffer(),
+      ],
+      program.programId
+    )[0];
+
+    const escrowTargetTokenAccount = getAssociatedTokenAddressSync(
+      mint.publicKey,
+      escrowAccount,
+      true,
+      TOKEN_2022_PROGRAM_ID
+    );
 
     const initialFreeAccountBalance  = await provider.connection.getTokenAccountBalance(saleAddresses.freeTokenAccount);
-    const initialReceiverBalance = await provider.connection.getTokenAccountBalance(purshaseAddresses.userTargetTokenAccount);
+    const initialEscrowBalance = 0;
 
+    const tokenAmount = 100 * (10 ** 8);
     const tx = await program.methods
-      .transferToken(new BN((tokenAmount)))
+      .transferToEscrow(new BN((tokenAmount)))
       .accounts({
         signer: saleAddresses.freeAccount,
         sale: saleAddresses.sale,
-        authority: saleAddresses.authority,
         targetToken: saleAddresses.targetToken,
         signerTargetTokenAccount: saleAddresses.freeTokenAccount,
-        receiverTargetTokenAccount: purshaseAddresses.userTargetTokenAccount,
-        receiver: user.publicKey,
+        escrowAccount,
+        escrowTargetTokenAccount: escrowTargetTokenAccount, 
+        receiver: investor.publicKey,
         tokenProgram: TOKEN_2022_PROGRAM_ID
       })
       .signers([free_account])
       .rpc()
       .catch((e) => console.error(e));
 
+      await new Promise((resolve) => setTimeout(resolve, 1000));
       const finalFreeAccountBalance  = await provider.connection.getTokenAccountBalance(saleAddresses.freeTokenAccount);
-      const finalReceiverBalance = await provider.connection.getTokenAccountBalance(purshaseAddresses.userTargetTokenAccount);
-      const accountInfo = await getAccount(provider.connection, purshaseAddresses.userTargetTokenAccount, "confirmed", TOKEN_2022_PROGRAM_ID);
+      const finalEscrowBalance = await provider.connection.getTokenAccountBalance(escrowTargetTokenAccount);
+      const accountInfo = await getAccount(provider.connection, saleAddresses.freeTokenAccount, "confirmed", TOKEN_2022_PROGRAM_ID);
 
       expect(accountInfo.isFrozen).to.be.eq(true);
       expect(Number(initialFreeAccountBalance.value.amount) - tokenAmount).to.be.eq(Number(finalFreeAccountBalance.value.amount));
-      expect(Number(initialReceiverBalance.value.amount) + tokenAmount).to.be.eq(Number(finalReceiverBalance.value.amount));
+      expect(initialEscrowBalance + tokenAmount).to.be.eq(Number(finalEscrowBalance.value.amount));
   });
 
   it("Should prevent mint more tokens after launch sale", async () => {
@@ -330,6 +362,57 @@ describe.only("meme_launchpad", () => {
 
     expect(Number(targetTokenVaultBalance.value.amount)).to.be.eq(liquidityTargetToken);
     expect(Number(paymentTokenVaultBalance.value.amount)).to.be.eq(liquidityPaymentToken);
+  });
+
+  it('Should correctly transfer tokens from escrow to investor', async () => {
+    const investorATA = getAssociatedTokenAddressSync(
+      mint.publicKey,
+      investor.publicKey,
+      false,
+      TOKEN_2022_PROGRAM_ID
+    );
+
+    const escrowAccount = anchor.web3.PublicKey.findProgramAddressSync(
+      [
+          investor.publicKey.toBuffer(),
+          saleAddresses.sale.toBuffer(),
+      ],
+      program.programId
+    )[0];
+
+    const escrowTargetTokenAccount = getAssociatedTokenAddressSync(
+      mint.publicKey,
+      escrowAccount,
+      true,
+      TOKEN_2022_PROGRAM_ID
+    );
+
+    const initialEscrowBalance  = await provider.connection.getTokenAccountBalance(escrowTargetTokenAccount);
+
+    const tx = await program.methods
+      .withdrawFromEscrow()
+      .accounts({
+        receiver: investor.publicKey,
+        sale: saleAddresses.sale,
+        targetToken: saleAddresses.targetToken,
+        signerTargetTokenAccount: saleAddresses.freeTokenAccount,
+        escrowAccount,
+        escrowTargetTokenAccount: escrowTargetTokenAccount, 
+        receiverTargetTokenAccount: investorATA,
+        tokenProgram: TOKEN_2022_PROGRAM_ID
+      })
+      .signers([investor])
+      .rpc()
+      .catch((e) => console.error(e));
+
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const finalEscrowBalance  = await provider.connection.getTokenAccountBalance(escrowTargetTokenAccount);
+      const finalInvestorBalance = await provider.connection.getTokenAccountBalance(investorATA);
+      const accountInfo = await getAccount(provider.connection, investorATA, "confirmed", TOKEN_2022_PROGRAM_ID);
+
+      expect(accountInfo.isFrozen).to.be.eq(true);
+      expect(Number(finalEscrowBalance.value.amount)).to.be.eq(0);
+      expect(Number(initialEscrowBalance.value.amount)).to.be.eq(Number(finalInvestorBalance.value.amount));
   });
 
   it("Should correctly thaw account", async () => {
@@ -554,5 +637,5 @@ describe.only("meme_launchpad", () => {
 
       expect(Number(userTargetBalanceAfter)).to.be.eq(Number(userTargetBalanceBefore) - Number(tokenAmount));
       expect(Number(userPaymentBalanceAfter)).to.be.closeTo(Number(userPaymentBalanceBefore) + Number(minExpectedPaymnetAmount), 50 * (10 ** 9));
-    })
+    });
 });

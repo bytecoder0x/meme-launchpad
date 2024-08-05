@@ -31,8 +31,12 @@ pub mod meme_launchpad {
         return instructions::thaw_token(ctx);
     }
 
-    pub fn transfer_token(ctx: Context<TransferToken>, amount: u64) -> Result<()> {
-        return instructions::transfer_token(ctx, amount);
+    pub fn transfer_to_escrow(ctx: Context<TransferToEscrow>, amount: u64) -> Result<()> {
+        return instructions::transfer_to_escrow(ctx, amount);
+    }
+
+    pub fn withdraw_from_escrow(ctx: Context<WithdrawFromEscrow>) -> Result<()> {
+        return instructions::withdraw_from_escrow(ctx);
     }
 
     pub fn increase_liq(ctx: Context<IncreaseLiq>) -> Result<()> {
