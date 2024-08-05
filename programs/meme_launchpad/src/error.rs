@@ -96,6 +96,8 @@ pub enum MemeLaunchpadError {
     BelowMinCap,
     #[msg("Amount out is above the maximum cap")]
     AboveMaxCap,
-    #[msg("Sale does not sell a sufficient number of tokens")]
+    #[msg("Sale didn't not sell a sufficient number of tokens")]
     SaleIsNotSuccess,
+    #[msg("Refund is not possible because the token balance is zero")]
+    InsufficientBalance,
 }

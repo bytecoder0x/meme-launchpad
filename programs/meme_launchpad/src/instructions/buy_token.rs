@@ -127,6 +127,7 @@ pub fn buy_token(ctx: Context<BuyToken>, params: BuyTokenParams) -> Result<()> {
         // 10 000 000 000 * 500 000 = 5 000 000 000 000 000 / 1 000 000 00 = 50 000 000 - 50 usdc
     }
 
+    msg!("amount_out {}", amount_out);
     if sale.min_cap != 0 && amount_out < sale.min_cap {
         return Err(MemeLaunchpadError::BelowMinCap.into());
     }

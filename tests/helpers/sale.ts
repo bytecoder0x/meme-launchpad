@@ -300,7 +300,12 @@ export function getCloseSaleAddresses(
     };
 }
 
-export function getTokenAndSaleParams(start: number, end: number, delay: number, startPrice: anchor.BN) {
+export function getTokenAndSaleParams(decimalsPaymentToken: number) {
+    const start = (Date.now() / 1000) + 2;
+    const end = start + 10;
+    const delay = end + 10;
+    const startPrice = new BN(5).mul(new BN(10).pow(new BN(decimalsPaymentToken))); // 5$
+
     const token_params = {
         name: "Meme Launchpad",
         symbol: "ML",

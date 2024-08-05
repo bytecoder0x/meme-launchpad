@@ -23,20 +23,24 @@ pub mod meme_launchpad {
         return instructions::buy_token(ctx, data);
     }
 
-    pub fn close_sale(ctx: Context<CloseSale>) -> Result<()> {
-        return instructions::close_sale(ctx);
-    }
-
-    pub fn thaw_token(ctx: Context<ThawToken>) -> Result<()> {
-        return instructions::thaw_token(ctx);
-    }
-
     pub fn transfer_to_escrow(ctx: Context<TransferToEscrow>, amount: u64) -> Result<()> {
         return instructions::transfer_to_escrow(ctx, amount);
     }
 
+    pub fn close_sale(ctx: Context<CloseSale>) -> Result<()> {
+        return instructions::close_sale(ctx);
+    }
+
+    pub fn refund_tokens(ctx: Context<RefundTokens>) -> Result<()> {
+        return instructions::refund_tokens(ctx);
+    }
+
     pub fn withdraw_from_escrow(ctx: Context<WithdrawFromEscrow>) -> Result<()> {
         return instructions::withdraw_from_escrow(ctx);
+    }
+
+    pub fn thaw_token(ctx: Context<ThawToken>) -> Result<()> {
+        return instructions::thaw_token(ctx);
     }
 
     pub fn increase_liq(ctx: Context<IncreaseLiq>) -> Result<()> {
