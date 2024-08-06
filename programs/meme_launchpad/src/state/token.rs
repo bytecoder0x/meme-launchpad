@@ -17,6 +17,9 @@ use spl_token_2022::{
 };
 
 #[account]
+pub struct Escrow {}
+
+#[account]
 pub struct TokenAuthority {}
 
 #[derive(AnchorSerialize, AnchorDeserialize)]

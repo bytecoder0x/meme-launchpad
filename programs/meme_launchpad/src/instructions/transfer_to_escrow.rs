@@ -3,7 +3,7 @@ use anchor_spl::{associated_token::AssociatedToken, token_interface::{
     freeze_account, thaw_account, transfer_checked, FreezeAccount, Mint, ThawAccount, TokenAccount, TokenInterface, TransferChecked
 }};
 
-use crate::state::{sale::Sale, token::TokenAuthority};
+use crate::state::{sale::Sale, token::{Escrow, TokenAuthority}};
 
 
 #[derive(Accounts)]
@@ -43,13 +43,13 @@ pub struct TransferToEscrow<'info> {
         bump,
         space = 8
     )]
-    pub escrow_account: AccountInfo<'info>,
+    pub escrow: Account<'info, Escrow>,
 
     #[account(
         init_if_needed,
         payer = signer,
         associated_token::mint = target_token,
-        associated_token::authority = escrow_account,
+        associated_token::authority = escrow,
     )]
     pub escrow_target_token_account: InterfaceAccount<'info, TokenAccount>,
 
