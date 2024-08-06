@@ -330,8 +330,8 @@ export function getTokenAndSaleParams(decimalsPaymentToken: number) {
           startPrice: startPrice, 
         },
         vesting: {
-            duration: 20,
-            vestingModel: { discrete: [5] },
+            duration: 40,
+            vestingModel: { discrete: [10] },
             percentage: 50_00, 
         },
         saleAmount: new BN(1000).mul(new BN(10).pow(new BN(token_params.decimals))),

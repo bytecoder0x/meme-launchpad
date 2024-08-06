@@ -410,50 +410,6 @@ describe.only("meme_launchpad", () => {
         expect(Number(initialEscrowBalance.value.amount)).to.be.eq(Number(finalInvestorBalance.value.amount));
     });
   
-    it("Should correctly thaw account", async () => {
-      await program.methods.thawToken().accounts({
-        signer: user.publicKey,
-        sale: saleAddresses.sale,
-        authority: saleAddresses.authority,
-        userTargetTokenAccount: purshaseAddresses.userTargetTokenAccount,
-        targetToken: mint.publicKey,
-        tokenProgram: TOKEN_2022_PROGRAM_ID,
-      }).signers([user]).rpc().catch(e => console.error(e));
-    
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-  
-      const accountInfo = await getAccount(provider.connection, purshaseAddresses.userTargetTokenAccount, "confirmed", TOKEN_2022_PROGRAM_ID);
-      expect(accountInfo.isFrozen).to.be.eq(false);
-    })
-  
-    it("Should correctly claim tokens", async () => {
-      const vestingProgram = anchor.workspace.Vesting;
-  
-      const userBalanceBeforeClaim = await provider.connection.getTokenAccountBalance(purshaseAddresses.userTargetTokenAccount);
-      const vestingBalanceBeforeClaim = await provider.connection.getTokenAccountBalance(purshaseAddresses.vestingTargetTokenAccount);
-      const halfTokenAmountInVesting = Number(vestingBalanceBeforeClaim.value.amount) / 2;
-  
-      // We can claim half of the amount in vesting. 
-      // Since the step is 5 seconds, and 10 seconds have passed since the beginning of the bought of tokens. 
-      // The total vesting time is 20 seconds. 
-      await vestingProgram.methods
-        .claimTokens()
-        .accounts({
-          vesting: purshaseAddresses.vesting,
-          userTokenAccount: purshaseAddresses.userTargetTokenAccount,
-          vestingTokenAccount: purshaseAddresses.vestingTargetTokenAccount,
-          targetToken: mint.publicKey,
-          tokenProgram: TOKEN_2022_PROGRAM_ID,
-          user: user.publicKey,
-        }).signers([user]).rpc().catch(e => console.error(e));
-  
-      const userBalanceAfterClaim = await provider.connection.getTokenAccountBalance(purshaseAddresses.userTargetTokenAccount);
-      const vestingBalanceAfterClaim = await provider.connection.getTokenAccountBalance(purshaseAddresses.vestingTargetTokenAccount);
-  
-      expect(Number(userBalanceAfterClaim.value.amount)).to.be.eq(Number(userBalanceBeforeClaim.value.amount) + halfTokenAmountInVesting);
-      expect(Number(vestingBalanceAfterClaim.value.amount)).to.be.eq(Number(vestingBalanceBeforeClaim.value.amount) - halfTokenAmountInVesting);
-    });
-  
     it("Should prevent attacks from sniper bots", async () => {
       const bot = new anchor.web3.Keypair();
       const ATACreationAddresses = [
@@ -520,86 +476,111 @@ describe.only("meme_launchpad", () => {
       expect(Math.round(Number(finalBotTargetBalance.value.uiAmount))).to.be.eq(1);
     });
   
-  
-    it("Should correctly burn tokens after start of trades", async () => {
-      const userBalanceBeforeBurn = await provider.connection.getTokenAccountBalance(purshaseAddresses.userTargetTokenAccount);
-      const tokenAmount = 1 * (10 ** 8);
-  
-      await burn(
-        provider.connection,
-        user,
-        purshaseAddresses.userTargetTokenAccount,
-        mint.publicKey,
-        user.publicKey,
-        tokenAmount,
-        [],
-        {},
-        TOKEN_2022_PROGRAM_ID
-      );
-  
-      const userBalanceAfterBurn = await provider.connection.getTokenAccountBalance(purshaseAddresses.userTargetTokenAccount);
-      expect(Number(userBalanceBeforeBurn.value.amount)).to.be.eq(Number(userBalanceAfterBurn.value.amount) + tokenAmount);
-    });
-  
     it("Should correctly increase liquidity and equalize the price on radium", async () => {
-        const lpSupplyBefore = (await cp_swap_program.account.poolState.fetch(closeSaleAddresses.poolState)).lpSupply.toNumber(); 
-        const salePaymentBalanceBefore = (await provider.connection.getTokenAccountBalance(closeSaleAddresses.salePaymentTokenAccount)).value.amount;
-        const saleTargetBalanceBefore = (await provider.connection.getTokenAccountBalance(closeSaleAddresses.saleTargetTokenAccount)).value.amount;
-        const vaultPaymentBalanceBefore = (await provider.connection.getTokenAccountBalance(closeSaleAddresses.paymentTokenVault)).value.amount;
-        const vaultTargetBalanceBefore = (await provider.connection.getTokenAccountBalance(closeSaleAddresses.targetTokenVault)).value.amount;
+      const lpSupplyBefore = (await cp_swap_program.account.poolState.fetch(closeSaleAddresses.poolState)).lpSupply.toNumber(); 
+      const salePaymentBalanceBefore = (await provider.connection.getTokenAccountBalance(closeSaleAddresses.salePaymentTokenAccount)).value.amount;
+      const saleTargetBalanceBefore = (await provider.connection.getTokenAccountBalance(closeSaleAddresses.saleTargetTokenAccount)).value.amount;
+      const vaultPaymentBalanceBefore = (await provider.connection.getTokenAccountBalance(closeSaleAddresses.paymentTokenVault)).value.amount;
+      const vaultTargetBalanceBefore = (await provider.connection.getTokenAccountBalance(closeSaleAddresses.targetTokenVault)).value.amount;
   
-        const startPrice = 5 * (10 ** 9);
-        const currentPrice = (Number(vaultPaymentBalanceBefore) * (10 ** 8)) / Number(vaultTargetBalanceBefore);
-        const mulTo = Math.sqrt(currentPrice / startPrice);
-        const amountIn = ((Number(vaultTargetBalanceBefore) * mulTo) - Number(vaultTargetBalanceBefore)) * 99 / 100;
-        const amountOut = (amountIn * Number(vaultPaymentBalanceBefore)) / (Number(vaultTargetBalanceBefore) + amountIn);
+      const startPrice = 5 * (10 ** 9);
+      const currentPrice = (Number(vaultPaymentBalanceBefore) * (10 ** 8)) / Number(vaultTargetBalanceBefore);
+      const mulTo = Math.sqrt(currentPrice / startPrice);
+      const amountIn = ((Number(vaultTargetBalanceBefore) * mulTo) - Number(vaultTargetBalanceBefore)) * 99 / 100;
+      const amountOut = (amountIn * Number(vaultPaymentBalanceBefore)) / (Number(vaultTargetBalanceBefore) + amountIn);
   
-        const salePaymentBalanceAfterSwap = Number(salePaymentBalanceBefore) + amountOut;
-        const saleTargetBalanceAfterSwap  = Number(saleTargetBalanceBefore) - amountIn;
-        const vaultPaymentBalanceAfterSwap  = Number(vaultPaymentBalanceBefore) - amountOut;
-        const vaultTargetBalanceAfterSwap  = Number(vaultTargetBalanceBefore) + amountIn;
+      const salePaymentBalanceAfterSwap = Number(salePaymentBalanceBefore) + amountOut;
+      const saleTargetBalanceAfterSwap  = Number(saleTargetBalanceBefore) - amountIn;
+      const vaultPaymentBalanceAfterSwap  = Number(vaultPaymentBalanceBefore) - amountOut;
+      const vaultTargetBalanceAfterSwap  = Number(vaultTargetBalanceBefore) + amountIn;
+
+      const tx = await program.methods.increaseLiq(
+        ).accounts({
+          ...closeSaleAddresses
+        })
+        .preInstructions([additionalComputeBudgetInstruction])
+        .signers([wallet.payer])
+        .rpc()
+        .catch((e) => console.error(e));
   
-        const tx = await program.methods.increaseLiq(
-          ).accounts({
-            ...closeSaleAddresses
-          })
-          .preInstructions([additionalComputeBudgetInstruction])
-          .signers([wallet.payer])
-          .rpc()
-          .catch((e) => console.error(e));
+      // await createAndSendV0Tx(provider, [tx], wallet.payer, undefined, cp_swap_program);
+
+      const lpSupplyAfter = (await cp_swap_program.account.poolState.fetch(closeSaleAddresses.poolState)).lpSupply.toNumber(); 
+      const salePaymentBalanceAfter = (await provider.connection.getTokenAccountBalance(closeSaleAddresses.salePaymentTokenAccount)).value.amount;
+      const saleTargetBalanceAfter = (await provider.connection.getTokenAccountBalance(closeSaleAddresses.saleTargetTokenAccount)).value.amount;
+      const vaultPaymentBalanceAfter = (await provider.connection.getTokenAccountBalance(closeSaleAddresses.paymentTokenVault)).value.amount;
+      const vaultTargetBalanceAfter = (await provider.connection.getTokenAccountBalance(closeSaleAddresses.targetTokenVault)).value.amount;
+      const saleLpBalanceAfter = (await provider.connection.getTokenAccountBalance(closeSaleAddresses.saleLpToken)).value.amount;
+
+      const lpSaleTargetToken = (saleTargetBalanceAfterSwap * lpSupplyBefore) / vaultTargetBalanceAfterSwap;
+      const lpSalePaymentToken = (salePaymentBalanceAfterSwap * lpSupplyBefore) / vaultPaymentBalanceAfterSwap;
+ 
+      const newLpAmount = Math.min(lpSaleTargetToken, lpSalePaymentToken);
+
+      const lpDelta = 2 * (10 ** 9); // 2
+      const paymentDelta = 3 * (10 ** 9); // 3
+      const targetDelta = 10 * (10 ** 8); // 10
+      const priceDelta = 1 * (10 ** 8); // 0.1
   
-        // await createAndSendV0Tx(provider, [tx], wallet.payer, undefined, cp_swap_program);
+      const saleAccountInfo = await program.account.sale.fetch(closeSaleAddresses.sale);
+      const paymnetAmountFromBot = 45 * (10 ** 9);
+      const expectedVaultTargetBalance = (startPrice * Number(saleAccountInfo.alreadySold) / 10 ** 8) + paymnetAmountFromBot;
+      const radiumPrice = Number(vaultPaymentBalanceAfter) * 10 ** 8 / Number(vaultTargetBalanceAfter);
   
-        const lpSupplyAfter = (await cp_swap_program.account.poolState.fetch(closeSaleAddresses.poolState)).lpSupply.toNumber(); 
-        const salePaymentBalanceAfter = (await provider.connection.getTokenAccountBalance(closeSaleAddresses.salePaymentTokenAccount)).value.amount;
-        const saleTargetBalanceAfter = (await provider.connection.getTokenAccountBalance(closeSaleAddresses.saleTargetTokenAccount)).value.amount;
-        const vaultPaymentBalanceAfter = (await provider.connection.getTokenAccountBalance(closeSaleAddresses.paymentTokenVault)).value.amount;
-        const vaultTargetBalanceAfter = (await provider.connection.getTokenAccountBalance(closeSaleAddresses.targetTokenVault)).value.amount;
-        const saleLpBalanceAfter = (await provider.connection.getTokenAccountBalance(closeSaleAddresses.saleLpToken)).value.amount;
+      expect(lpSupplyAfter).to.be.closeTo(newLpAmount + lpSupplyBefore, lpDelta);
+      expect(Number(saleTargetBalanceAfter)).to.be.eq(0);
+      expect(Number(saleLpBalanceAfter)).to.be.eq(0);
+      expect(Number(salePaymentBalanceAfter)).to.be.closeTo(0, paymentDelta);
+      expect(Number(vaultTargetBalanceAfter)).to.be.closeTo(Number(saleAccountInfo.alreadySold), targetDelta);
+      expect(Number(vaultPaymentBalanceAfter)).to.be.closeTo(expectedVaultTargetBalance, paymentDelta);
+      expect(radiumPrice).to.be.closeTo(startPrice, priceDelta);
+    });
+
+    it("Should correctly thaw account", async () => {
+      await program.methods.thawToken().accounts({
+        signer: user.publicKey,
+        sale: saleAddresses.sale,
+        authority: saleAddresses.authority,
+        userTargetTokenAccount: purshaseAddresses.userTargetTokenAccount,
+        targetToken: mint.publicKey,
+        tokenProgram: TOKEN_2022_PROGRAM_ID,
+      }).signers([user]).rpc().catch(e => console.error(e));
+    
+      await new Promise((resolve) => setTimeout(resolve, 1000));
   
-        const lpSaleTargetToken = (saleTargetBalanceAfterSwap * lpSupplyBefore) / vaultTargetBalanceAfterSwap;
-        const lpSalePaymentToken = (salePaymentBalanceAfterSwap * lpSupplyBefore) / vaultPaymentBalanceAfterSwap;
+      const accountInfo = await getAccount(provider.connection, purshaseAddresses.userTargetTokenAccount, "confirmed", TOKEN_2022_PROGRAM_ID);
+      expect(accountInfo.isFrozen).to.be.eq(false);
+    });
+
+    it("Should correctly claim tokens", async () => {
+      const vestingProgram = anchor.workspace.Vesting;
   
-        const newLpAmount = Math.min(lpSaleTargetToken, lpSalePaymentToken);
+      const userBalanceBeforeClaim = await provider.connection.getTokenAccountBalance(purshaseAddresses.userTargetTokenAccount);
+      const vestingBalanceBeforeClaim = await provider.connection.getTokenAccountBalance(purshaseAddresses.vestingTargetTokenAccount);
+      const halfTokenAmountInVesting = Number(vestingBalanceBeforeClaim.value.amount) / 2;
+      
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+
+      // We can claim half of the amount in vesting. 
+      // Since the step is 10 seconds, and about 20 seconds have passed since the beginning of the bought of tokens. 
+      // The total vesting time is 40 seconds. 
+      await vestingProgram.methods
+        .claimTokens()
+        .accounts({
+          vesting: purshaseAddresses.vesting,
+          userTokenAccount: purshaseAddresses.userTargetTokenAccount,
+          vestingTokenAccount: purshaseAddresses.vestingTargetTokenAccount,
+          targetToken: mint.publicKey,
+          tokenProgram: TOKEN_2022_PROGRAM_ID,
+          user: user.publicKey,
+        }).signers([user]).rpc().catch(e => console.error(e));
   
-        const lpDelta = 2 * (10 ** 9); // 2
-        const paymentDelta = 3 * (10 ** 9); // 3
-        const targetDelta = 10 * (10 ** 8); // 10
-        const priceDelta = 1 * (10 ** 8); // 0.1
+      const userBalanceAfterClaim = await provider.connection.getTokenAccountBalance(purshaseAddresses.userTargetTokenAccount);
+      const vestingBalanceAfterClaim = await provider.connection.getTokenAccountBalance(purshaseAddresses.vestingTargetTokenAccount);
   
-        const saleAccountInfo = await program.account.sale.fetch(closeSaleAddresses.sale);
-        const paymnetAmountFromBot = 45 * (10 ** 9);
-        const expectedVaultTargetBalance = (startPrice * Number(saleAccountInfo.alreadySold) / 10 ** 8) + paymnetAmountFromBot;
-        const radiumPrice = Number(vaultPaymentBalanceAfter) * 10 ** 8 / Number(vaultTargetBalanceAfter);
-  
-        expect(lpSupplyAfter).to.be.closeTo(newLpAmount + lpSupplyBefore, lpDelta);
-        expect(Number(saleTargetBalanceAfter)).to.be.eq(0);
-        expect(Number(saleLpBalanceAfter)).to.be.eq(0);
-        expect(Number(salePaymentBalanceAfter)).to.be.closeTo(0, paymentDelta);
-        expect(Number(vaultTargetBalanceAfter)).to.be.closeTo(Number(saleAccountInfo.alreadySold), targetDelta);
-        expect(Number(vaultPaymentBalanceAfter)).to.be.closeTo(expectedVaultTargetBalance, paymentDelta);
-        expect(radiumPrice).to.be.closeTo(startPrice, priceDelta);
-      });
+      expect(Number(userBalanceAfterClaim.value.amount)).to.be.eq(Number(userBalanceBeforeClaim.value.amount) + halfTokenAmountInVesting);
+      expect(Number(vestingBalanceAfterClaim.value.amount)).to.be.eq(Number(vestingBalanceBeforeClaim.value.amount) - halfTokenAmountInVesting);
+    });
   
     it("Should correctly swap tokens after increase liquidity for correctly price", async () => {
       const price = 5 * (10 ** 9);
@@ -633,9 +614,29 @@ describe.only("meme_launchpad", () => {
       expect(Number(userTargetBalanceAfter)).to.be.eq(Number(userTargetBalanceBefore) - Number(tokenAmount));
       expect(Number(userPaymentBalanceAfter)).to.be.closeTo(Number(userPaymentBalanceBefore) + Number(minExpectedPaymnetAmount), 50 * (10 ** 9));
     });
+
+    it("Should correctly burn tokens after start of trades", async () => {
+      const userBalanceBeforeBurn = await provider.connection.getTokenAccountBalance(purshaseAddresses.userTargetTokenAccount);
+      const tokenAmount = 1 * (10 ** 8);
+  
+      await burn(
+        provider.connection,
+        user,
+        purshaseAddresses.userTargetTokenAccount,
+        mint.publicKey,
+        user.publicKey,
+        tokenAmount,
+        [],
+        {},
+        TOKEN_2022_PROGRAM_ID
+      );
+  
+      const userBalanceAfterBurn = await provider.connection.getTokenAccountBalance(purshaseAddresses.userTargetTokenAccount);
+      expect(Number(userBalanceBeforeBurn.value.amount)).to.be.eq(Number(userBalanceAfterBurn.value.amount) + tokenAmount);
+    });
   });
 
-  describe.only("Unsuccessful sale", () => {
+  describe("Unsuccessful sale", () => {
     const paymentToken = new anchor.web3.Keypair();
     const free_account = new anchor.web3.Keypair();
     const user = new anchor.web3.Keypair();
@@ -801,6 +802,15 @@ describe.only("meme_launchpad", () => {
       expect(Number(salePaymentBalanceBefore.value.amount)).to.be.eq(Number(userPaymentBalanceAfter.value.amount) - Number(userPaymentBalanceBefore.value.amount));
       expect(Number(salePaymentBalanceAfter.value.amount)).to.be.eq(0);
       expect(Number(userTargetBalanceAfter.value.amount)).to.be.eq(0);
+    });
+
+    it("Should prevent refund if user has already done it or the balance is zero", async () => {
+      await expectFail(
+        program.methods.refundTokens().accounts({
+          ...purshaseAddresses,
+        }).signers([user]).rpc(),
+        "Refund is not possible because the token balance is zero"
+      );
     });
   });
 });

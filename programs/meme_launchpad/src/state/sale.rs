@@ -100,7 +100,9 @@ pub struct Sale {
     pub max_cap: u64,
     pub free_wallet: Pubkey,
     pub already_sold: u64,
+
     pub sale_success: bool,
+    pub is_token_trading: bool,
     
     pub creation_time: i64,
 

@@ -98,42 +98,5 @@ pub fn transfer_to_escrow(ctx: Context<TransferToEscrow>, amount: u64) -> Result
     );
     freeze_account(froze_cpi_context_free)?;
 
-    // if ctx.accounts.receiver_target_token_account.is_frozen() {
-    //     let thaw_cpi_context = CpiContext::new_with_signer(
-    //         ctx.accounts.token_program.to_account_info(),
-    //         ThawAccount {
-    //             account : ctx.accounts.receiver_target_token_account.to_account_info(),
-    //             mint : ctx.accounts.target_token.to_account_info(),
-    //             authority : ctx.accounts.authority.to_account_info()
-    //         },
-    //         authority_signer
-    //     );
-    //     thaw_account(thaw_cpi_context)?;    
-    // }
-
-    // let in_cpi_ctx = CpiContext::new(
-    //     ctx.accounts.token_program.to_account_info(),
-    //     TransferChecked {
-    //         mint: ctx.accounts.target_token.to_account_info(),
-    //         from: ctx.accounts.signer_target_token_account.to_account_info(),
-    //         to: ctx.accounts.receiver_target_token_account.to_account_info(),
-    //         authority: ctx.accounts.signer.to_account_info(),
-    //     },
-    // );
-
-    // transfer_checked(in_cpi_ctx, amount, ctx.accounts.target_token.decimals)?;
-
-    
-    // let froze_cpi_context_receiver = CpiContext::new_with_signer(
-    //     ctx.accounts.token_program.to_account_info(),
-    //     FreezeAccount {
-    //         account : ctx.accounts.receiver_target_token_account.to_account_info(),
-    //         mint : ctx.accounts.target_token.to_account_info(),
-    //         authority : ctx.accounts.authority.to_account_info()
-    //     },
-    //     authority_signer
-    // );
-    // freeze_account(froze_cpi_context_receiver)?;
-
     Ok(())
 }

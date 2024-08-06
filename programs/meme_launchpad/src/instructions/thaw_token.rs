@@ -43,10 +43,8 @@ pub struct ThawToken<'info> {
 }
 
 pub fn thaw_token(ctx: Context<ThawToken>) -> Result<()> {
-
-    let curtime = ctx.accounts.sale.get_time()?;
     require!(
-        ctx.accounts.sale.is_ready_to_close(curtime),
+        ctx.accounts.sale.is_token_trading,
         MemeLaunchpadError::SaleNotReadyToClose
     );
     

@@ -357,6 +357,8 @@ pub fn increase_liq(ctx: Context<IncreaseLiq>) -> Result<()> {
 
     let _ = burn(cpi_context, amount_to_burn);
 
+    ctx.accounts.sale.is_token_trading = true;
+
     Ok(())
 }
 

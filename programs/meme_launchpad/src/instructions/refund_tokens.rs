@@ -103,7 +103,7 @@ pub fn refund_tokens(ctx: Context<RefundTokens>) -> Result<()> {
 
     require!(
         !sale.sale_success,
-        MemeLaunchpadError::SaleIsNotSuccess
+        MemeLaunchpadError::SaleIsSuccess
     );
 
     let user_target_token_balance = ctx.accounts.user_target_token_account.amount;
