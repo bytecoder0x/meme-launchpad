@@ -229,7 +229,7 @@ pub fn close_sale(ctx: Context<CloseSale>) -> Result<()> {
         return Err(MemeLaunchpadError::InvalidPoolState.into());
     }
 
-    let part_target_liq_amount = sale.liq_amount * 100 / 1000;
+    let part_target_liq_amount = sale.sale_amount * 100 / 1000;
     let par_payment_liq_amount = ctx.accounts.sale_payment_token_account.amount * 900 / 1000;
 
     let init_amount_0 = if is_target_token_less {

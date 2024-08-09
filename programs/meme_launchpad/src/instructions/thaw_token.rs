@@ -45,7 +45,7 @@ pub struct ThawToken<'info> {
 pub fn thaw_token(ctx: Context<ThawToken>) -> Result<()> {
     require!(
         ctx.accounts.sale.is_token_trading,
-        MemeLaunchpadError::SaleNotReadyToClose
+        MemeLaunchpadError::TradingInactive
     );
     
     let authority_signer: &[&[&[u8]]] = &[&[b"authority", &[ctx.bumps.authority]]];

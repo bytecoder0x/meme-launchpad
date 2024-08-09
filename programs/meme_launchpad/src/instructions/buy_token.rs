@@ -204,7 +204,7 @@ pub fn buy_token(ctx: Context<BuyToken>, params: BuyTokenParams) -> Result<()> {
     approve(approve_cpi_ctx, vesting_amount_out)?;
 
     let vesting_params = VestingParams {
-        start_date: curtime as u32,
+        start_date: sale.get_start_time() as u32,
         duration: sale.vesting.duration,
         amount: vesting_amount_out,
         vesting_type: sale.vesting.vesting_model.clone(),

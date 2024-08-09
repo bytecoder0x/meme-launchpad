@@ -17,7 +17,7 @@ import {
   TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
 import { expect } from "chai";
-import { getCloseSaleAddresses, getCreateSaleAddresses, getPurshaseAddresses, getTokenAndSaleParams } from "./helpers/sale";
+import { getCloseSaleAddresses, getCreateSaleAddresses, getFreeAddresses, getPurshaseAddresses, getTokenAndSaleParams } from "./helpers/sale";
 import { createATA } from "./helpers/token";
 import { createAndSendV0Tx, expectFail, expectSystemFail } from "./helpers/test";
 
@@ -88,6 +88,13 @@ describe.only("meme_launchpad", () => {
       RAYDIUM_PROGRAM_ID
     );
 
+    const freeAddresses = getFreeAddresses(
+      investor.publicKey,
+      mint.publicKey,
+      free_account.publicKey,
+      program.programId,
+    );
+
     before(async () => {
       await createMint(provider.connection, wallet.payer, wallet.publicKey, wallet.publicKey, 9, paymentToken, {},
         TOKEN_2022_PROGRAM_ID);
@@ -133,7 +140,7 @@ describe.only("meme_launchpad", () => {
       const saleTargetTokenAccount = await provider.connection.getTokenAccountBalance(saleAddresses.saleTargetTokenAccount);
       const freeTargetTokenAccount = await provider.connection.getTokenAccountBalance(saleAddresses.freeTokenAccount);
   
-      expect(saleTargetTokenAccount.value.amount).to.be.eq(sale_params.saleAmount.add(sale_params.liqAmount).toString());
+      expect(saleTargetTokenAccount.value.amount).to.be.eq(sale_params.saleAmount.add(sale_params.saleAmount).toString());
       expect(freeTargetTokenAccount.value.amount).to.be.eq(freeAmount.toString());
     });
   
@@ -252,21 +259,6 @@ describe.only("meme_launchpad", () => {
 
       await provider.sendAndConfirm(transaction, [wallet.payer]);
   
-      const escrowAccount = anchor.web3.PublicKey.findProgramAddressSync(
-        [
-            investor.publicKey.toBuffer(),
-            saleAddresses.sale.toBuffer(),
-        ],
-        program.programId
-      )[0];
-  
-      const escrowTargetTokenAccount = getAssociatedTokenAddressSync(
-        mint.publicKey,
-        escrowAccount,
-        true,
-        TOKEN_2022_PROGRAM_ID
-      );
-  
       const initialFreeAccountBalance  = await provider.connection.getTokenAccountBalance(saleAddresses.freeTokenAccount);
       const initialEscrowBalance = 0;
   
@@ -274,14 +266,7 @@ describe.only("meme_launchpad", () => {
       const tx = await program.methods
         .transferToEscrow(new BN((tokenAmount)))
         .accounts({
-          signer: saleAddresses.freeAccount,
-          sale: saleAddresses.sale,
-          targetToken: saleAddresses.targetToken,
-          signerTargetTokenAccount: saleAddresses.freeTokenAccount,
-          escrow: escrowAccount,
-          escrowTargetTokenAccount: escrowTargetTokenAccount, 
-          receiver: investor.publicKey,
-          tokenProgram: TOKEN_2022_PROGRAM_ID
+          ...freeAddresses
         })
         .signers([free_account])
         .rpc()
@@ -289,7 +274,7 @@ describe.only("meme_launchpad", () => {
   
         await new Promise((resolve) => setTimeout(resolve, 1000));
         const finalFreeAccountBalance  = await provider.connection.getTokenAccountBalance(saleAddresses.freeTokenAccount);
-        const finalEscrowBalance = await provider.connection.getTokenAccountBalance(escrowTargetTokenAccount);
+        const finalEscrowBalance = await provider.connection.getTokenAccountBalance(freeAddresses.escrowTargetTokenAccount);
         const accountInfo = await getAccount(provider.connection, saleAddresses.freeTokenAccount, "confirmed", TOKEN_2022_PROGRAM_ID);
   
         expect(accountInfo.isFrozen).to.be.eq(true);
@@ -348,7 +333,7 @@ describe.only("meme_launchpad", () => {
     it('Should correctly close sale', async () => {
       const saleAccountInfo = await program.account.sale.fetch(closeSaleAddresses.sale);
       const salePaymentBalance = await provider.connection.getTokenAccountBalance(closeSaleAddresses.salePaymentTokenAccount);
-      const liquidityTargetToken = Number(saleAccountInfo.liqAmount) * 100 / 1000;
+      const liquidityTargetToken = Number(saleAccountInfo.saleAmount) * 100 / 1000;
       const liquidityPaymentToken = Number(salePaymentBalance.value.amount) * 900 / 1000;
   
       const tx = await program.methods
@@ -368,7 +353,7 @@ describe.only("meme_launchpad", () => {
       expect(Number(paymentTokenVaultBalance.value.amount)).to.be.eq(liquidityPaymentToken);
     });
   
-    it('Should correctly transfer tokens from escrow to investor', async () => {
+    it('Should correctly transfer tokens from escrow to investor if sale is successful', async () => {
       const investorATA = getAssociatedTokenAddressSync(
         mint.publicKey,
         investor.publicKey,
@@ -376,22 +361,7 @@ describe.only("meme_launchpad", () => {
         TOKEN_2022_PROGRAM_ID
       );
   
-      const escrowAccount = anchor.web3.PublicKey.findProgramAddressSync(
-        [
-            investor.publicKey.toBuffer(),
-            saleAddresses.sale.toBuffer(),
-        ],
-        program.programId
-      )[0];
-  
-      const escrowTargetTokenAccount = getAssociatedTokenAddressSync(
-        mint.publicKey,
-        escrowAccount,
-        true,
-        TOKEN_2022_PROGRAM_ID
-      );
-  
-      const initialEscrowBalance  = await provider.connection.getTokenAccountBalance(escrowTargetTokenAccount);
+      const initialEscrowBalance  = await provider.connection.getTokenAccountBalance(freeAddresses.escrowTargetTokenAccount);
   
       const vesting = anchor.web3.PublicKey.findProgramAddressSync(
         [
@@ -412,13 +382,12 @@ describe.only("meme_launchpad", () => {
         .withdrawFromEscrow()
         .accounts({
           receiver: investor.publicKey,
-          sale: saleAddresses.sale,
-          targetToken: saleAddresses.targetToken,
-          signerTargetTokenAccount: saleAddresses.freeTokenAccount,
+          sale: freeAddresses.sale,
+          targetToken: freeAddresses.targetToken,
           vesting,
           vestingTargetTokenAccount: vesting_target_token_account,
-          escrow: escrowAccount,
-          escrowTargetTokenAccount: escrowTargetTokenAccount, 
+          escrow: freeAddresses.escrow,
+          escrowTargetTokenAccount: freeAddresses.escrowTargetTokenAccount, 
           receiverTargetTokenAccount: investorATA,
           tokenProgram: TOKEN_2022_PROGRAM_ID
         })
@@ -427,15 +396,34 @@ describe.only("meme_launchpad", () => {
         .catch((e) => console.error(e));
   
         await new Promise((resolve) => setTimeout(resolve, 1000));
-        const finalEscrowBalance  = await provider.connection.getTokenAccountBalance(escrowTargetTokenAccount);
+        const finalEscrowBalance  = await provider.connection.getTokenAccountBalance(freeAddresses.escrowTargetTokenAccount);
         const finalInvestorBalance = await provider.connection.getTokenAccountBalance(investorATA);
+        const finalVestingBalance = await provider.connection.getTokenAccountBalance(vesting_target_token_account);
         const accountInfo = await getAccount(provider.connection, investorATA, "confirmed", TOKEN_2022_PROGRAM_ID);
   
-        // expect(accountInfo.isFrozen).to.be.eq(true);
-        // expect(Number(finalEscrowBalance.value.amount)).to.be.eq(0);
-        // expect(Number(initialEscrowBalance.value.amount)).to.be.eq(Number(finalInvestorBalance.value.amount));
+        const expectedVestingBalance = Number(initialEscrowBalance.value.amount) / 2;
+        const expectedInvestorBalance = Number(initialEscrowBalance.value.amount) / 2;
+
+        expect(accountInfo.isFrozen).to.be.eq(true);
+        expect(Number(finalEscrowBalance.value.amount)).to.be.eq(0);
+        expect(Number(finalInvestorBalance.value.amount)).to.be.eq(expectedInvestorBalance);
+        expect(Number(finalVestingBalance.value.amount)).to.be.eq(expectedVestingBalance);
     });
   
+    it("Should prevent thaw tokens if the trading hasn't yet started", async () => {
+      await expectFail(
+        program.methods.thawToken().accounts({
+          signer: user.publicKey,
+          sale: saleAddresses.sale,
+          authority: saleAddresses.authority,
+          userTargetTokenAccount: purshaseAddresses.userTargetTokenAccount,
+          targetToken: mint.publicKey,
+          tokenProgram: TOKEN_2022_PROGRAM_ID,
+        }).signers([user]).rpc(),
+        "Operation not allowed because token trading is inactive"
+      );
+    })
+
     it("Should prevent attacks from sniper bots", async () => {
       const bot = new anchor.web3.Keypair();
       const ATACreationAddresses = [
@@ -692,6 +680,13 @@ describe.only("meme_launchpad", () => {
       RAYDIUM_PROGRAM_ID
     );
 
+    const freeAddresses = getFreeAddresses(
+      investor.publicKey,
+      mint.publicKey,
+      free_account.publicKey,
+      program.programId,
+    );
+
     before(async () => {
       await createMint(provider.connection, wallet.payer, wallet.publicKey, wallet.publicKey, 6, paymentToken, {},
         TOKEN_2022_PROGRAM_ID);
@@ -836,6 +831,85 @@ describe.only("meme_launchpad", () => {
           ...purshaseAddresses,
         }).signers([user]).rpc(),
         "Refund is not possible because the token balance is zero"
+      );
+    });
+
+    it("Should prevent refund for investor if sale isn't successful", async () => {
+      const ATACreationAddresses = [
+        {
+          user: investor.publicKey,
+          mint: mint.publicKey,
+        }
+      ]
+  
+      const transaction = (await createATA(wallet.publicKey, ATACreationAddresses))
+          .add(
+              SystemProgram.transfer({
+                  fromPubkey: wallet.publicKey,
+                  toPubkey: free_account.publicKey,
+                  lamports: 1_000_000_000, // 1 sol
+              })
+          )
+          .add(
+              SystemProgram.transfer({
+                  fromPubkey: wallet.publicKey,
+                  toPubkey: investor.publicKey,
+                  lamports: 1_000_000_000, // 1 sol
+              })
+          );
+
+      await provider.sendAndConfirm(transaction, [wallet.payer]);
+  
+  
+      const tokenAmount = 100 * (10 ** 8);
+      await program.methods
+        .transferToEscrow(new BN((tokenAmount)))
+        .accounts({
+          ...freeAddresses
+        })
+        .signers([free_account])
+        .rpc()
+        .catch((e) => console.error(e));
+
+      const investorATA = getAssociatedTokenAddressSync(
+        mint.publicKey,
+        investor.publicKey,
+        false,
+        TOKEN_2022_PROGRAM_ID
+      );
+  
+      const vesting = anchor.web3.PublicKey.findProgramAddressSync(
+        [
+            investor.publicKey.toBuffer(),
+            mint.publicKey.toBuffer()
+        ],
+        anchor.workspace.Vesting.programId
+      )[0];
+
+      const vesting_target_token_account = getAssociatedTokenAddressSync(
+        mint.publicKey,
+        vesting,
+        true,
+        TOKEN_2022_PROGRAM_ID
+      );
+
+      await expectFail(
+        program.methods
+        .withdrawFromEscrow()
+        .accounts({
+          receiver: investor.publicKey,
+          sale: freeAddresses.sale,
+          targetToken: freeAddresses.targetToken,
+          vesting,
+          vestingTargetTokenAccount: vesting_target_token_account,
+          escrow: freeAddresses.escrow,
+          escrowTargetTokenAccount: freeAddresses.escrowTargetTokenAccount, 
+          receiverTargetTokenAccount: investorATA,
+          tokenProgram: TOKEN_2022_PROGRAM_ID
+        })
+        .signers([investor])
+        .rpc(),
+        "Sale didn't not sell a sufficient number of tokens"
       );
     });
   });

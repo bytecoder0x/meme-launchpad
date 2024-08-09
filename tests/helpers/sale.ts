@@ -143,6 +143,53 @@ export function getCreateSaleAddresses(
     }
 }
 
+export function getFreeAddresses(
+    investor: anchor.web3.PublicKey,
+    target_token: anchor.web3.PublicKey,
+    free_account: anchor.web3.PublicKey,
+    programId: anchor.web3.PublicKey,
+) {
+    const sale = anchor.web3.PublicKey.findProgramAddressSync(
+        [
+            Buffer.from("sale"),
+            target_token.toBuffer(),
+        ],
+        programId
+    )[0];
+   
+    const escrow_account = anchor.web3.PublicKey.findProgramAddressSync(
+        [
+            investor.toBuffer(),
+            sale.toBuffer(),
+        ],
+        programId
+    )[0];
+  
+    const escrow_target_token_account = getAssociatedTokenAddressSync(
+        target_token,
+        escrow_account,
+        true,
+        TOKEN_2022_PROGRAM_ID
+    );
+
+    const free_account_ATA = getAssociatedTokenAddressSync(
+        target_token,
+        free_account,
+        false,
+        TOKEN_2022_PROGRAM_ID
+    )
+    return {
+        signer: free_account,
+        sale: sale,
+        targetToken: target_token,
+        signerTargetTokenAccount: free_account_ATA,
+        escrow: escrow_account,
+        escrowTargetTokenAccount: escrow_target_token_account, 
+        receiver: investor,
+        tokenProgram: TOKEN_2022_PROGRAM_ID
+    }
+}
+
 export function getCloseSaleAddresses(
     owner: anchor.web3.PublicKey,
     mint: anchor.web3.PublicKey,
@@ -335,7 +382,6 @@ export function getTokenAndSaleParams(decimalsPaymentToken: number) {
             percentage: 50_00, 
         },
         saleAmount: new BN(1000).mul(new BN(10).pow(new BN(token_params.decimals))),
-        liqAmount: new BN(1000).mul(new BN(10).pow(new BN(token_params.decimals))),
         maxCap: new BN(1000).mul(new BN(10).pow(new BN(token_params.decimals))),
         minCap: new BN(10).mul(new BN(10).pow(new BN(token_params.decimals))),
       }

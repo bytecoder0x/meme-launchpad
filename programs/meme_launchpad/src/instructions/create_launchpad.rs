@@ -75,7 +75,7 @@ pub fn create_token_and_sale(
 
     let mint = ctx.accounts.target_token.to_account_info();
     let target_ata = ctx.accounts.sale_target_token_account.to_account_info();
-    let amount_for_sale = params.create_sale_params.sale_amount.checked_add(params.create_sale_params.liq_amount).unwrap();
+    let amount_for_sale = params.create_sale_params.sale_amount.checked_add(params.create_sale_params.sale_amount).unwrap();
     
     let _  = _create_token(
         ctx.accounts.signer.to_account_info(), 
