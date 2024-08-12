@@ -95,8 +95,14 @@ pub struct RefundTokens<'info> {
 pub fn refund_tokens(ctx: Context<RefundTokens>) -> Result<()> {
     let sale = &mut ctx.accounts.sale;
     let curtime = sale.get_time()?;
-
+   
     require!(sale.is_ended(curtime), MemeLaunchpadError::SaleInProgress);
+
+    require!(
+        sale.free_wallet != ctx.accounts.signer.key(),
+        MemeLaunchpadError::OnlyUsers
+    );
+
 
     require!(
         !sale.is_success(),

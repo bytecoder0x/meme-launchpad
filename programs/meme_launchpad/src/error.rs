@@ -106,4 +106,10 @@ pub enum MemeLaunchpadError {
     InsufficientBalance,
     #[msg("Operation not allowed because token trading is inactive")]
     TradingInactive,
+    #[msg("Free wallet can't refund")]
+    OnlyUsers,
+    #[msg("Pre-sale duration exceeds the maximum allowed period of six months.")]
+    PreSaleTooLong,
+    #[msg("Trading start time is too late. It must begin within three months after the sale ends.")]
+    LateTradingStart,
 }

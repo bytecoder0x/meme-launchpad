@@ -3,6 +3,8 @@ use anchor_spl::associated_token;
 
 use vesting::state::vesting::VestingType;
 
+use crate::error::MemeLaunchpadError;
+
 #[derive(Copy, Clone, PartialEq, AnchorSerialize, AnchorDeserialize, Default, Debug)]
 pub struct BidderStats {
     pub fills_volume: u64,
@@ -228,6 +230,18 @@ pub fn _create_sale<'info>(
     free_wallet: Pubkey,
 ) -> Result<()> {
     msg!("Creating Sale Account");
+    
+    let six_months_in_seconds = 6 * 30 * 24 * 60 * 60;
+    require!(
+        params.common.end_time - params.common.start_time <= six_months_in_seconds,
+        MemeLaunchpadError::PreSaleTooLong
+    );
+
+    let three_months_in_seconds = 3 * 30 * 24 * 60 * 60;
+    require!(
+        params.common.close_time - params.common.end_time <= three_months_in_seconds,
+        MemeLaunchpadError::LateTradingStart
+    );
 
     let cpi_ctx = CpiContext::new(
         associated_token_program.to_account_info(),

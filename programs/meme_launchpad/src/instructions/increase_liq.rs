@@ -176,7 +176,7 @@ pub fn increase_liq(ctx: Context<IncreaseLiq>) -> Result<()> {
     let pool = get_pool(&ctx.accounts.pool_state.try_borrow_data()?)?;
     
     // TODO: change to 900s (15m) for mainnet
-    let delay = 1;
+    let delay = 0;
 
     require!(pool.status == 0, MemeLaunchpadError::PoolNotInitialized);
     require!(pool.open_time + delay < curtime as u64, MemeLaunchpadError::PoolNotReadyInitialized);
