@@ -101,7 +101,6 @@ pub struct Sale {
     pub free_wallet: Pubkey,
     pub already_sold: u64,
 
-    pub sale_success: bool,
     pub is_token_trading: bool,
     
     pub creation_time: i64,
@@ -132,6 +131,16 @@ impl Sale {
         Ok(self.common.name.len() >= 6
             && self.common.validate(self.get_time()?)
             && self.pricing.validate())
+    }
+
+    pub fn is_success(&self) -> bool  {
+        let tokens_sold_percentage = self
+            .already_sold
+            .checked_mul(100_00 as u64)
+            .and_then(|x| x.checked_div(self.sale_amount))
+            .unwrap();
+
+        tokens_sold_percentage >= 75_00
     }
 
     /// checks if sale has started

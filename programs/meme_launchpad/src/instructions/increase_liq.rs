@@ -174,8 +174,12 @@ pub fn increase_liq(ctx: Context<IncreaseLiq>) -> Result<()> {
     let is_target_token_less = ctx.accounts.target_token.key() < ctx.accounts.payment_token.key();
     let curtime = sale.get_time()?;
     let pool = get_pool(&ctx.accounts.pool_state.try_borrow_data()?)?;
+    
+    // TODO: change to 900s (15m) for mainnet
+    let delay = 1;
 
     require!(pool.status == 0, MemeLaunchpadError::PoolNotInitialized);
+    require!(pool.open_time + delay < curtime as u64, MemeLaunchpadError::PoolNotReadyInitialized);
 
     let (target_amount, payment_amount) = get_current_liquidity(
         &ctx.accounts.target_token_vault.try_borrow_data()?,

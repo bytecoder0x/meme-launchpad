@@ -92,6 +92,8 @@ pub enum MemeLaunchpadError {
     PoolNotInitialized, 
     #[msg("Invalid pool state")]
     InvalidPoolState,
+    #[msg("Pool is not ready for initialized")]
+    PoolNotReadyInitialized,
     #[msg("Amount out is below the minimum cap")]
     BelowMinCap,
     #[msg("Amount out is above the maximum cap")]

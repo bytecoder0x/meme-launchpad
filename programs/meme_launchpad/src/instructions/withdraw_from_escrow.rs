@@ -67,9 +67,12 @@ pub struct WithdrawFromEscrow<'info> {
 
 pub fn withdraw_from_escrow(ctx: Context<WithdrawFromEscrow>) -> Result<()> {
     let sale = &ctx.accounts.sale;
+    let curtime = sale.get_time()?;
+
+    require!(sale.is_ended(curtime), MemeLaunchpadError::SaleInProgress);
 
     require!(
-        sale.sale_success,
+        sale.is_success(),
         MemeLaunchpadError::SaleIsNotSuccess
     );
 

@@ -96,13 +96,10 @@ pub fn refund_tokens(ctx: Context<RefundTokens>) -> Result<()> {
     let sale = &mut ctx.accounts.sale;
     let curtime = sale.get_time()?;
 
-    require!(
-        sale.is_ready_to_close(curtime),
-        MemeLaunchpadError::SaleNotReadyToClose
-    );
+    require!(sale.is_ended(curtime), MemeLaunchpadError::SaleInProgress);
 
     require!(
-        !sale.sale_success,
+        !sale.is_success(),
         MemeLaunchpadError::SaleIsSuccess
     );
 

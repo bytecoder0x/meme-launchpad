@@ -1,5 +1,3 @@
-use std::ops::Mul;
-
 use anchor_lang::prelude::*;
 use anchor_spl::{
     associated_token::{self, AssociatedToken}, token::{Token, TokenAccount as SplTokenAccount}, token_interface::{transfer_checked, Mint, TokenAccount, TokenInterface, TransferChecked}
@@ -183,18 +181,8 @@ pub fn close_sale(ctx: Context<CloseSale>) -> Result<()> {
         MemeLaunchpadError::SaleNotReadyToClose
     );
 
-    let tokens_sold_percentage = sale
-        .already_sold
-        .checked_mul(100_00 as u64)
-        .and_then(|x| x.checked_div(sale.sale_amount))
-        .ok_or(MemeLaunchpadError::MathOverflow)?;
-
-    if tokens_sold_percentage >= 75_00 {
-        sale.sale_success = true;
-    }
-
     require!(
-        sale.sale_success,
+        sale.is_success(),
         MemeLaunchpadError::SaleIsNotSuccess
     );
 
@@ -330,11 +318,11 @@ pub fn close_sale(ctx: Context<CloseSale>) -> Result<()> {
         // sale_seeds,
     );
     
-    raydium_cp_swap::cpi::initialize(
+    let _ = raydium_cp_swap::cpi::initialize(
         cpi_context,
         init_amount_0,
         init_amount_1,
-        sale.common.close_time as u64,
+        curtime as u64,
     );
 
     let _ = associated_token::create(CpiContext::new(

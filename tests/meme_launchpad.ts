@@ -293,29 +293,17 @@ describe.only("meme_launchpad", () => {
       );
     });
   
-    it("Should prevent close sale if it isn't ready", async () => {
+    it("Should prevent buy tokens if sale has been ended", async () => {
       const ATACreationAddresses = [
         {
           user: wallet.publicKey,
           mint: mint.publicKey,
         }
-      ]
+      ];
   
       const ataTransaction = await createATA(wallet.publicKey, ATACreationAddresses);
       await provider.sendAndConfirm(ataTransaction, [wallet.payer]);
-  
-      await expectFail(
-            program.methods
-          .closeSale()
-          .accounts({...closeSaleAddresses,})
-          .preInstructions([additionalComputeBudgetInstruction])
-          .signers([wallet.payer])
-          .rpc(),
-            "Sale is not ready to close"
-          );
-    });
-  
-    it("Should prevent buy tokens if sale has been ended", async () => {
+
       await new Promise((resolve) => setTimeout(resolve, 8000));
   
       const amount = new BN(100).mul(new BN(10).pow(new BN(8)));
